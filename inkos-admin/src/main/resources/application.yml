@@ -20,7 +20,7 @@ spring:
     timeout-per-shutdown-phase: 30s
   threads:
     virtual:
-      # JDK 21+ 虚拟线程：AI 调用、HTTP 出站这类阻塞等待不再占用平台线程
+      # JDK 21+ 虚拟线程：下游 HTTP 调用这类阻塞等待不再占用平台线程
       enabled: true
   jackson:
     default-property-inclusion: non_null

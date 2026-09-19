@@ -28,7 +28,6 @@ import java.util.List;
  * @param contentHtml    HTML 正文
  * @param status         文章状态码
  * @param visibility     可见性
- * @param aiGenerated    是否 AI 生成
  * @param qualityScore   质量分
  * @param createTime     创建时间
  * @param updateTime     更新时间
@@ -53,7 +52,6 @@ public record ArticleVO(
         String contentHtml,
         Integer status,
         Integer visibility,
-        Boolean aiGenerated,
         Integer qualityScore,
         LocalDateTime createTime,
         LocalDateTime updateTime

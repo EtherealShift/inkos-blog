@@ -83,13 +83,9 @@ public class Article extends BaseEntity {
     @TableField("comment_count")
     private Integer commentCount;
 
-    /** 质量分，AI 或人工评估结果 */
+    /** 质量分，人工评估结果 */
     @TableField("quality_score")
     private Integer qualityScore;
-
-    /** 是否 AI 生成 */
-    @TableField("ai_generated")
-    private Boolean aiGenerated;
 
     /** 发布时间，仅 PUBLISHED 时有值 */
     @TableField("published_at")

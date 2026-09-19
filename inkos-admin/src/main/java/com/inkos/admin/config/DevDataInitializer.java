@@ -158,9 +158,6 @@ public class DevDataInitializer implements ApplicationRunner {
         all.addAll(quoteButtons);
         authorMenus.addAll(quoteButtons);
 
-        // 智能助手菜单随 inkos-ai 模块一起暂缓（见 inkos-ai/PARKED.md），
-        // 重启时在 permissions 表补回「智能助手」目录与 ai:chat 权限码即可。
-
         return all;
     }
 
@@ -234,12 +231,12 @@ public class DevDataInitializer implements ApplicationRunner {
         List<Long> dbTags = tagService.resolveTagIds(List.of("MySQL", "MyBatis-Plus", "性能优化"));
         List<Long> opsTags = tagService.resolveTagIds(List.of("MySQL", "数据库迁移", "架构设计"));
 
-        Long a1 = articleService.create(new ArticleForm(null, backend, "为什么我把智能博客做成了模块化单体",
+        Long a1 = articleService.create(new ArticleForm(null, backend, "为什么我把博客系统做成了模块化单体",
                 "why-modular-monolith",
                 "从分层边界、依赖方向到拆分时机，讲清楚这个后端骨架的取舍。",
                 null,
                 """
-                # 为什么我把智能博客做成了模块化单体
+                # 为什么我把博客系统做成了模块化单体
 
                 微服务不是起点，而是**结果**。当你只有 1~5 个开发者时，先把边界画对，
                 比先把进程拆开重要得多。
@@ -251,7 +248,6 @@ public class DevDataInitializer implements ApplicationRunner {
                 framework  框架层：Sa-Token、全局异常、MyBatis-Plus、AOP
                 system     系统层：用户、角色、菜单权限
                 content    内容层：文章、分类、标签、评论
-                ai         智能层：模型路由、Prompt、RAG
                 common     基础层：统一响应、异常、常量、工具
                 ```
 
@@ -263,7 +259,7 @@ public class DevDataInitializer implements ApplicationRunner {
 
                 | 信号 | 动作 |
                 |---|---|
-                | AI 调用拖慢 Web 响应 | 把 ai 拆成独立进程 |
+                | 导出/报表任务拖慢 Web 响应 | 把批处理拆成独立进程 |
                 | 检索流量与主体差异大 | 抽出 search-service |
                 | 服务数 > 5 | 引入网关统一鉴权 |
 

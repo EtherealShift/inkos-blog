@@ -24,8 +24,8 @@ public class OpenApiConfig {
     public OpenAPI inkosOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("砚知 · 智能博客系统 API")
-                        .description("分层架构后端骨架：admin(表现) / framework(框架) / system(系统) / content(内容) / ai(智能) / common(基础)")
+                        .title("砚知 · 博客系统 API")
+                        .description("分层架构后端骨架：admin(表现) / framework(框架) / system(系统) / content(内容) / common(基础)")
                         .version("1.0.0")
                         .contact(new Contact().name("inkos"))
                         .license(new License().name("MIT")))

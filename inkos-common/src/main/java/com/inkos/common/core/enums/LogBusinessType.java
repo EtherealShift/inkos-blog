@@ -16,8 +16,7 @@ public enum LogBusinessType {
     EXPORT("导出"),
     IMPORT("导入"),
     FORCE("强退"),
-    CLEAN("清空"),
-    AI_GENERATE("AI 生成");
+    CLEAN("清空");
 
     private final String desc;
 

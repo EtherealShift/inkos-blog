@@ -31,10 +31,7 @@ public enum ResultCode {
     USERNAME_EXISTS(40901, "用户名已存在"),
     EMAIL_EXISTS(40902, "邮箱已被注册"),
     ARTICLE_NOT_FOUND(40401, "文章不存在"),
-    ARTICLE_NOT_EDITABLE(40301, "无权编辑该文章"),
-
-    AI_UNAVAILABLE(50301, "AI 服务暂时不可用"),
-    AI_QUOTA_EXCEEDED(42901, "AI 调用配额已用尽");
+    ARTICLE_NOT_EDITABLE(40301, "无权编辑该文章");
 
     private final int code;
     private final String message;

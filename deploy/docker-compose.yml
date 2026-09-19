@@ -3,6 +3,10 @@
 #   docker compose -f deploy/docker-compose.yml up -d
 #
 # dev profile 完全不需要这些 —— 用的是 H2 内存库。
+#
+# 所有口令都支持环境变量覆盖，默认值只面向本地开发：
+#   MYSQL_ROOT_PASSWORD=xxx MYSQL_PASSWORD=yyy REDIS_PASSWORD=zzz \
+#     docker compose -f deploy/docker-compose.yml up -d
 version: "3.9"
 
 services:
@@ -15,10 +19,10 @@ services:
       - --collation-server=utf8mb4_general_ci
       - --default-time-zone=+08:00
     environment:
-      MYSQL_ROOT_PASSWORD: root_dev_pwd
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_pwd}
       MYSQL_DATABASE: inkos
       MYSQL_USER: inkos
-      MYSQL_PASSWORD: inkos_dev_pwd
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-inkos_dev_pwd}
     ports:
       # 宿主端口刻意用 3307：本机 3306 往往已有 MySQL 实例，避免端口冲突
       - "3307:3306"
@@ -27,7 +31,7 @@ services:
       # 首次启动自动建表（与应用共用同一份脚本，避免两处 DDL 漂移）
       - ../inkos-admin/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uinkos", "-pinkos_dev_pwd"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uinkos", "-p${MYSQL_PASSWORD:-inkos_dev_pwd}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -36,13 +40,13 @@ services:
     image: redis:7-alpine
     container_name: inkos-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "inkos_dev_pwd"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-inkos_dev_pwd}"]
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "inkos_dev_pwd", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-inkos_dev_pwd}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

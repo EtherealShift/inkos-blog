@@ -30,7 +30,7 @@ public class SysPermissionServiceImpl implements SysPermissionService {
      * <p>刻意用单个 {@code *} 而不是 RuoYi 风格的 {@code *:*:*}：
      * Sa-Token 把权限项当<b>正则模式</b>匹配（{@code *} → {@code .*}），
      * {@code *:*:*} 会展开成 {@code .*:.*:.*}，要求至少两个冒号，
-     * 因而匹配不到 {@code ai:chat} 这类两段式权限码 —— 超管反而被拒。
+     * 因而匹配不到 {@code content:list} 这类两段式权限码 —— 超管反而被拒。
      * 单个 {@code *} 才能覆盖任意段数的权限码。
      */
     private static final String ALL_PERMISSION = "*";

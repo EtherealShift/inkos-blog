@@ -1,5 +1,5 @@
 -- ============================================================================
--- 砚知 · 智能博客系统 —— MySQL 建表脚本
+-- 砚知 · 博客系统 —— MySQL 建表脚本
 --
 -- 目标：MySQL 8.0+（InnoDB / utf8mb4）
 --   * 引擎与字符集在表级显式声明，不依赖服务端默认值 —— 默认值在不同环境往往不一致，
@@ -143,7 +143,6 @@ CREATE TABLE IF NOT EXISTS cms_article (
     like_count      INT          NOT NULL DEFAULT 0      COMMENT '点赞数',
     comment_count   INT          NOT NULL DEFAULT 0      COMMENT '评论数',
     quality_score   INT                   DEFAULT NULL  COMMENT '内容质量分（预留字段）',
-    ai_generated    TINYINT      NOT NULL DEFAULT 0      COMMENT '是否含 AI 生成内容（合规标记）',
     published_at    DATETIME              DEFAULT NULL  COMMENT '发布时间',
     create_by       VARCHAR(64)           DEFAULT NULL  COMMENT '创建人',
     create_time     DATETIME              DEFAULT NULL  COMMENT '创建时间',

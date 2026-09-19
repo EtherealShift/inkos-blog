@@ -24,12 +24,6 @@
             <groupId>com.inkos</groupId>
             <artifactId>inkos-content</artifactId>
         </dependency>
-        <!-- inkos-ai 暂缓开发
-        <dependency>
-            <groupId>com.inkos</groupId>
-            <artifactId>inkos-ai</artifactId>
-        </dependency>
-        -->
         <!--
           注意：不要引入 spring-security-test / spring-boot-starter-security。
           它们会把 spring-security-core 带进测试类路径，触发 Spring Boot 的

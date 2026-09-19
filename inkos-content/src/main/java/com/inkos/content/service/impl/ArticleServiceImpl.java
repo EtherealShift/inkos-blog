@@ -179,7 +179,6 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         article.setViewCount(0L);
         article.setLikeCount(0);
         article.setCommentCount(0);
-        article.setAiGenerated(Boolean.FALSE);
         save(article);
 
         replaceArticleTags(article.getId(), Collections.emptyList(), resolveTagIds(form.tagIds()));
@@ -528,7 +527,6 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
                 article.getContentHtml(),
                 article.getStatus(),
                 article.getVisibility(),
-                article.getAiGenerated(),
                 article.getQualityScore(),
                 article.getCreateTime(),
                 article.getUpdateTime());

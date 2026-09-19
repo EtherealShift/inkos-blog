@@ -1,11 +1,8 @@
-# 砚知 · 博客系统（后端骨架）
+# 砚知 · 博客系统（后端）
 
 > `inkos` = **Ink** + **OS**。
 
-一个**分层架构的 Java 后端骨架**，数据库为 **MySQL 8**。不是空壳：登录鉴权、RBAC 权限、文章 CRUD 全部是**能跑通的真实代码**，`git clone` 后无需任何外部中间件即可启动并调用。
-
-> AI 能力（模型路由 / RAG / 写作助手）**本期不开发**。模块代码完整保留在 `inkos-ai/`，
-> 但已移出构建，恢复步骤见 [`inkos-ai/PARKED.md`](inkos-ai/PARKED.md)。
+一个**分层架构的 Java 后端**，数据库为 **MySQL 8**。不是空壳：登录鉴权、RBAC 权限、文章 CRUD 全部是**能跑通的真实代码**，`git clone` 后无需任何外部中间件即可启动并调用。
 
 ---
 
@@ -16,7 +13,7 @@
 | 组件 | 版本 | 说明 |
 |---|---|---|
 | JDK | **21+** | 推荐 21 LTS；已在 JDK 25 上验证 |
-| Maven | 3.9+ | |
+| Maven | 3.9+ | 可选 —— 仓库自带 Maven Wrapper |
 
 ### 启动
 
@@ -24,7 +21,7 @@
 cd inkos-blog
 
 # 编译（跳过测试）
-mvn clean package -DskipTests
+./mvnw clean package -DskipTests
 
 # 运行
 java -jar inkos-admin/target/inkos-blog.jar
@@ -33,8 +30,11 @@ java -jar inkos-admin/target/inkos-blog.jar
 或者直接：
 
 ```bash
-mvn -pl inkos-admin -am spring-boot:run
+./mvnw -pl inkos-admin -am spring-boot:run
 ```
+
+> Windows 下用 `mvnw.cmd` 代替 `./mvnw`。本机已装 Maven 3.9+ 时，`mvn` 与 `./mvnw` 等价 ——
+> wrapper 的价值在于**锁定构建工具版本**，不依赖机器上装了什么。
 
 启动后：
 
@@ -65,10 +65,16 @@ H2 控制台连接参数：JDBC URL `jdbc:h2:mem:inkos`、用户名 `sa`、密�
 docker compose -f deploy/docker-compose.yml up -d mysql
 
 # 2. 用 local profile 启动
-mvn -pl inkos-admin -am spring-boot:run -Dspring-boot.run.profiles=local
+./mvnw -pl inkos-admin -am spring-boot:run -Dspring-boot.run.profiles=local
 
 # 3. 连自己的 MySQL 就覆盖环境变量
 #    DB_PORT=3306 DB_USERNAME=root DB_PASSWORD=xxx
+```
+
+`deploy/docker-compose.yml` 里的开发口令全部支持环境变量覆盖，默认值只面向本地：
+
+```bash
+MYSQL_ROOT_PASSWORD=xxx REDIS_PASSWORD=yyy docker compose -f deploy/docker-compose.yml up -d
 ```
 
 ### 默认账号
@@ -110,8 +116,6 @@ inkos-blog (parent, packaging=pom)
 ├── inkos-framework   框架层   Sa-Token、全局异常、MyBatis-Plus、AOP、Web 配置
 ├── inkos-content     内容层   文章、分类、标签、评论
 └── inkos-admin       表现层   控制器、DTO 装配、启动类、配置文件   ← 打包入口
-
-inkos-ai              智能层   已移出构建（本期不开发，代码保留）
 ```
 
 ### 依赖方向（严格单向，无环）
@@ -174,6 +178,10 @@ public class SysUserAuthorNameResolver implements AuthorNameResolver { ... }
 ```
 inkos-blog/
 ├── pom.xml                                  父 POM：统一依赖版本与编译插件
+├── mvnw / mvnw.cmd                          Maven Wrapper
+├── .mvn/wrapper/                            wrapper 版本锁定
+├── .gitattributes                           换行符归一化
+│
 ├── inkos-common/
 │   └── com/inkos/common/
 │       ├── core/domain/       Result / PageResult / PageQuery / BaseEntity
@@ -207,13 +215,8 @@ inkos-blog/
 │       ├── dto/ vo/           ArticleQuery ArticleForm CategoryForm / ArticleVO ...
 │       └── service/           文章、分类、标签
 │
-├── inkos-ai/                                ← 已移出构建，仅存档
-│   ├── PARKED.md                            ← 恢复步骤 + 重启前的选型提醒
-│   └── com/inkos/ai/
-│       ├── client/            LlmClient（抽象）/ MockLlmClient / OpenAiCompatibleLlmClient
-│       ├── router/            ModelRouter（按场景路由 + 降级）
-│       ├── prompt/            PromptRegistry（模板 + 变量渲染）
-│       └── facade/            AiFacade（业务唯一入口）
+├── deploy/
+│   └── docker-compose.yml                    本地 MySQL / Redis（仅 local、prod 需要）
 │
 └── inkos-admin/
     ├── java/com/inkos/admin/
@@ -245,7 +248,7 @@ inkos-blog/
 | 代码简化 | Lombok | 1.18.46 |
 
 **刻意没引入的东西**（骨架阶段保持轻量）：Spring Security 过滤器链、Redis、Elasticsearch、
-消息队列、任何 AI SDK。理由与接入时机见架构设计文档。
+消息队列。理由与接入时机见架构设计文档。
 
 ---
 
@@ -286,8 +289,6 @@ inkos-blog/
 | PUT | `/api/v1/admin/articles/{id}/publish` | `content:article:publish` |
 | GET/POST/PUT/DELETE | `/api/v1/admin/categories` | `content:category:*` |
 
-> 原 `/api/v1/ai/**` 三个接口随 `inkos-ai` 模块一起下线，现在访问返回 404。
-
 ---
 
 ## 六、工程约定
@@ -317,7 +318,7 @@ content:article:add  内容 - 文章 - 新增
 
 超管返回通配权限 `*`（Sa-Token 把权限项当正则模式匹配，`*` 展开为 `.*`，可覆盖任意段数）。
 **不要**用 RuoYi 风格的 `*:*:*`：它会展开成 `.*:.*:.*`，要求至少两个冒号，
-匹配不到 `ai:chat` 这类两段式权限码 —— 超管反而拿到 403。
+匹配不到 `content:list` 这类两段式权限码 —— 超管反而拿到 403。
 
 ### 数据层约定
 
@@ -366,12 +367,6 @@ java -jar inkos-admin/target/inkos-blog.jar
 
 生产环境建议改用 Flyway/Liquibase 管理版本，并把 `spring.sql.init.mode` 设为 `never`。
 
-### 重启 AI 功能
-
-见 [`inkos-ai/PARKED.md`](inkos-ai/PARKED.md)。里面有两部分：四步恢复清单，
-以及**重启前必须先做的三个选型决策** —— 换到 MySQL 后，原来的
-`pgvector`（向量检索）和 `zhparser`（中文全文检索）方案都失效了，需要重新选型。
-
 ### 接入 Redis 分布式会话
 
 1. 三个模块的 POM 加 `spring-boot-starter-data-redis` 与 Sa-Token 的 Redis 集成包
@@ -382,7 +377,7 @@ java -jar inkos-admin/target/inkos-blog.jar
 
 ## 八、环境坑（实测记录）
 
-这三个问题是本骨架搭建时真实踩到并已修复的，升级依赖时请留意：
+这几个问题是本骨架搭建时真实踩到并已修复的，升级依赖时请留意：
 
 ### 1. Lombok 不生效？JDK 23+ 的注解处理器变更
 
@@ -439,7 +434,7 @@ WARN c.b.m.c.injector.DefaultSqlInjector - class ...SysUserRole Not found @Table
 
 ## 九、下一步
 
-对照《智能博客系统-架构与功能设计.md》的里程碑：
+对照架构设计文档的里程碑：
 
 | 阶段 | 状态 |
 |---|---|
@@ -448,19 +443,15 @@ WARN c.b.m.c.injector.DefaultSqlInjector - class ...SysUserRole Not found @Table
 | M3 发布流水线：Outbox + MQ + 索引 + 缓存失效 | ⬜ 待开发 |
 | M4 互动：评论树、点赞收藏、统计看板 | ⬜ 待开发（`cms_comment` 表已建） |
 | M5 生产化：可观测性、限流熔断、SEO、备份演练 | ⬜ 待开发 |
-| ~~AI：模型路由、RAG、写作助手~~ | ⏸ 本期不做，模块已归档至 `inkos-ai/` |
 
 **推荐的下一步**：接入 Markdown 渲染 + Jsoup 净化（`ArticleServiceImpl` 中 `contentHtml` 目前暂存原文），
 这样 M2 才算真正闭环。紧接着把 `spring.sql.init.mode` 换成 Flyway 管理数据库版本。
 
-### 换到 MySQL 后遗留的技术债
+### 已知技术债
 
-架构设计文档第 5 章里 RAG 相关方案建立在 PostgreSQL 之上，现在需要重新选型：
-
-| 原方案（PostgreSQL） | 换 MySQL 后的选项 |
-|---|---|
-| `pgvector` 存向量 | 独立向量库（Qdrant / Milvus）或 MySQL 8.4 的 `VECTOR` 类型 |
-| `zhparser` 中文分词 | MySQL `ngram` 全文索引，或外接 Elasticsearch（推荐，混合检索更可控） |
-| `JSONB` 存 citations / seo | MySQL `JSON` 类型（功能略弱，无 GIN 索引） |
-
-这些只影响 AI 重启时的选型，不影响当前骨架。
+| 项 | 现状 | 方向 |
+|---|---|---|
+| Markdown → HTML | 暂存原文，未净化 | 渲染 + Jsoup 白名单 |
+| 全文检索 | 未接入 | MySQL `ngram` 全文索引，或外接 Elasticsearch（混合检索更可控） |
+| JSON 字段 | 未使用 | MySQL `JSON` 类型无 GIN 索引，复杂查询需另建索引表 |
+| 数据库版本管理 | `schema.sql` 全量执行 | 生产切 Flyway/Liquibase |

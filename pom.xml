@@ -17,7 +17,7 @@
     <packaging>pom</packaging>
 
     <name>inkos-blog</name>
-    <description>砚知 · 智能博客系统（分层架构后端）</description>
+    <description>砚知 · 博客系统（分层架构后端）</description>
 
     <modules>
         <module>inkos-common</module>
@@ -25,13 +25,6 @@
         <module>inkos-framework</module>
         <module>inkos-content</module>
         <module>inkos-admin</module>
-        <!--
-          inkos-ai 暂时移出构建（详见 inkos-ai/PARKED.md）。
-          代码完整保留在仓库里，需要重启时：放开下面这一行、
-          恢复 dependencyManagement 中的 inkos-ai 项、恢复 inkos-admin 的依赖，
-          再恢复 inkos-admin 的 AiController 即可。
-        -->
-        <!-- <module>inkos-ai</module> -->
     </modules>
 
     <properties>
@@ -68,14 +61,6 @@
                 <artifactId>inkos-content</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <!-- inkos-ai 暂缓开发，随模块一起移出构建
-            <dependency>
-                <groupId>com.inkos</groupId>
-                <artifactId>inkos-ai</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            -->
-
             <!-- ===== 第三方 ===== -->
             <dependency>
                 <groupId>cn.dev33</groupId>

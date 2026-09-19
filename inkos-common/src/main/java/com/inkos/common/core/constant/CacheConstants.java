@@ -23,12 +23,6 @@ public final class CacheConstants {
     /** 标签云 */
     public static final String TAG_CLOUD_KEY = "inkos:tag:cloud";
 
-    /** AI 结果缓存（按 场景 + 输入哈希） */
-    public static final String AI_RESULT_KEY = "inkos:ai:result:";
-
-    /** AI 每日用量 */
-    public static final String AI_USAGE_KEY = "inkos:ai:usage:";
-
     /** 阅读数去重 */
     public static final String VIEW_DEDUP_KEY = "inkos:view:dedup:";
 }
