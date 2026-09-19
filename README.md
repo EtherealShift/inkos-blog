@@ -36,6 +36,16 @@ java -jar inkos-admin/target/inkos-blog.jar
 > Windows 下用 `mvnw.cmd` 代替 `./mvnw`。本机已装 Maven 3.9+ 时，`mvn` 与 `./mvnw` 等价 ——
 > wrapper 的价值在于**锁定构建工具版本**，不依赖机器上装了什么。
 
+> **注意 `mvnw` 依赖 `JAVA_HOME`**：wrapper 脚本不会像 `mvn` 那样回退到 PATH 上的 `java`，
+> 未设置时直接报 `JAVA_HOME not found in your environment`。先确认：
+>
+> ```bash
+> echo $JAVA_HOME          # Windows: echo %JAVA_HOME%
+> # 未设置则指向 JDK 21 安装目录，例如：
+> #   Windows  C:\Program Files\Java\jdk-21.0.12
+> #   macOS/Linux  $(/usr/libexec/java_home -v 21)
+> ```
+
 启动后：
 
 | 入口 | 地址 |
