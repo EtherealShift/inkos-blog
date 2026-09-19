@@ -1,0 +1,81 @@
+server:
+  port: 8080
+  shutdown: graceful
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+    min-response-size: 2048
+
+spring:
+  application:
+    name: inkos-blog
+  profiles:
+    active: dev
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  threads:
+    virtual:
+      # JDK 21+ 虚拟线程：AI 调用、HTTP 出站这类阻塞等待不再占用平台线程
+      enabled: true
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: GMT+8
+    date-format: yyyy-MM-dd HH:mm:ss
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 关闭一级缓存之外的行为保持默认；SQL 日志由 logback 的 com.inkos.mapper 级别控制
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+sa-token:
+  # 与 CommonConstants.TOKEN_HEADER / TOKEN_PREFIX 保持一致
+  token-name: Authorization
+  token-prefix: Bearer
+  # 30 天；-1 表示不因闲置而失效
+  timeout: 2592000
+  active-timeout: -1
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: false
+  is-print: false
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+inkos:
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173
+    allow-credentials: true
+
+logging:
+  level:
+    root: info
+    com.inkos: info

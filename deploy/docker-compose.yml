@@ -1,0 +1,52 @@
+# 本地基础设施：仅在 local / prod profile 或做真实联调时需要
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# dev profile 完全不需要这些 —— 用的是 H2 内存库。
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: inkos-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_pwd
+      MYSQL_DATABASE: inkos
+      MYSQL_USER: inkos
+      MYSQL_PASSWORD: inkos_dev_pwd
+    ports:
+      # 宿主端口刻意用 3307：本机 3306 往往已有 MySQL 实例，避免端口冲突
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动建表（与应用共用同一份脚本，避免两处 DDL 漂移）
+      - ../inkos-admin/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uinkos", "-pinkos_dev_pwd"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: inkos-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "inkos_dev_pwd"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "inkos_dev_pwd", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+  redis-data:

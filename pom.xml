@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.11</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.inkos</groupId>
+    <artifactId>inkos-blog</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>inkos-blog</name>
+    <description>砚知 · 智能博客系统（分层架构后端）</description>
+
+    <modules>
+        <module>inkos-common</module>
+        <module>inkos-system</module>
+        <module>inkos-framework</module>
+        <module>inkos-content</module>
+        <module>inkos-admin</module>
+        <!--
+          inkos-ai 暂时移出构建（详见 inkos-ai/PARKED.md）。
+          代码完整保留在仓库里，需要重启时：放开下面这一行、
+          恢复 dependencyManagement 中的 inkos-ai 项、恢复 inkos-admin 的依赖，
+          再恢复 inkos-admin 的 AiController 即可。
+        -->
+        <!-- <module>inkos-ai</module> -->
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <sa-token.version>1.45.0</sa-token.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <lombok.version>1.18.46</lombok.version>
+        <springdoc.version>2.8.9</springdoc.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- ===== 本项目模块 ===== -->
+            <dependency>
+                <groupId>com.inkos</groupId>
+                <artifactId>inkos-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.inkos</groupId>
+                <artifactId>inkos-system</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.inkos</groupId>
+                <artifactId>inkos-framework</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.inkos</groupId>
+                <artifactId>inkos-content</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- inkos-ai 暂缓开发，随模块一起移出构建
+            <dependency>
+                <groupId>com.inkos</groupId>
+                <artifactId>inkos-ai</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            -->
+
+            <!-- ===== 第三方 ===== -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-spring-boot3-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-annotation</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <configuration>
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <!--
+              重要：JDK 23 起 javac 不再隐式执行 classpath 上的注解处理器（-proc 默认变更），
+              因此 Lombok 必须通过 annotationProcessorPaths 显式声明，否则 @Data/@Slf4j 全部失效。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <compilerArgs>
+                        <arg>-Xlint:none</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

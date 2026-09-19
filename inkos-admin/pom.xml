@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.inkos</groupId>
+        <artifactId>inkos-blog</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>inkos-admin</artifactId>
+    <name>inkos-admin</name>
+    <description>表现层 / 启动层：控制器、DTO 装配、配置与打包入口</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.inkos</groupId>
+            <artifactId>inkos-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.inkos</groupId>
+            <artifactId>inkos-content</artifactId>
+        </dependency>
+        <!-- inkos-ai 暂缓开发
+        <dependency>
+            <groupId>com.inkos</groupId>
+            <artifactId>inkos-ai</artifactId>
+        </dependency>
+        -->
+        <!--
+          注意：不要引入 spring-security-test / spring-boot-starter-security。
+          它们会把 spring-security-core 带进测试类路径，触发 Spring Boot 的
+          SecurityAutoConfiguration，自动生成一条默认过滤器链并拦截所有请求 ——
+          鉴权已经在 Sa-Token，多一条链会让 401 行为变得难以排查。
+          BCrypt 只用到 spring-security-crypto（无传递依赖），由 inkos-system 引入。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>inkos-blog</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

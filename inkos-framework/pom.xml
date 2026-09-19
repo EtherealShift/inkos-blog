@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.inkos</groupId>
+        <artifactId>inkos-blog</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>inkos-framework</artifactId>
+    <name>inkos-framework</name>
+    <description>框架层：Sa-Token 鉴权、全局异常、MyBatis-Plus 配置、AOP 日志、Web 配置</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.inkos</groupId>
+            <artifactId>inkos-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.inkos</groupId>
+            <artifactId>inkos-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!--
+          重要：MyBatis-Plus 3.5.9 起将依赖 JSqlParser 的插件（分页、防全表更新）拆到了独立模块，
+          不引入本依赖时 PaginationInnerInterceptor 会 ClassNotFound。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>
