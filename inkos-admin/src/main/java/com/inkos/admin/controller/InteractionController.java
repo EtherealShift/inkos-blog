@@ -6,6 +6,7 @@ import com.inkos.common.core.domain.Result;
 import com.inkos.content.service.ReactionService;
 import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ReactionStateVO;
+import com.inkos.framework.ratelimit.RateLimit;
 import com.inkos.framework.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,18 +35,21 @@ public class InteractionController {
     private final ReactionService reactionService;
 
     @Operation(summary = "点赞 / 取消点赞文章")
+    @RateLimit(count = 30, period = 60, key = "article.like")
     @PostMapping("/articles/{articleId}/like")
     public Result<ReactionStateVO> toggleLike(@PathVariable Long articleId) {
         return Result.ok(reactionService.toggleLike(articleId, SecurityUtils.getUserId()));
     }
 
     @Operation(summary = "收藏 / 取消收藏文章")
+    @RateLimit(count = 30, period = 60, key = "article.favorite")
     @PostMapping("/articles/{articleId}/favorite")
     public Result<ReactionStateVO> toggleFavorite(@PathVariable Long articleId) {
         return Result.ok(reactionService.toggleFavorite(articleId, SecurityUtils.getUserId()));
     }
 
     @Operation(summary = "点赞 / 取消点赞评论", description = "返回 true 表示操作后处于已点赞状态")
+    @RateLimit(count = 30, period = 60, key = "comment.like")
     @PostMapping("/comments/{commentId}/like")
     public Result<Boolean> toggleCommentLike(@PathVariable Long commentId) {
         return Result.ok(reactionService.toggleCommentLike(commentId, SecurityUtils.getUserId()));

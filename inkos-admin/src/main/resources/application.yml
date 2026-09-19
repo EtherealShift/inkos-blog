@@ -84,7 +84,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        # prometheus 供指标抓取；metrics 便于按名字查询；health 用于存活判定
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when-authorized

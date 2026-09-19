@@ -8,6 +8,7 @@ import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.enums.ArticleStatus;
 import com.inkos.common.core.enums.ResultCode;
 import com.inkos.common.exception.BusinessException;
+import com.inkos.common.metrics.InkosMetrics;
 import com.inkos.common.util.StrUtils;
 import com.inkos.common.util.TextUtils;
 import com.inkos.content.dto.ArticleForm;
@@ -90,6 +91,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
      * 而不是让整个内容模块启动失败。
      */
     private final ObjectProvider<AuthorNameResolver> authorNameResolverProvider;
+    private final InkosMetrics metrics;
 
     // ==================== 查询 ====================
 
@@ -170,6 +172,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         // 先取详情再计数：即使自增失败也不应影响正文返回
         ArticleVO vo = toVo(article);
         baseMapper.incrementViewCount(article.getId());
+        metrics.count(InkosMetrics.ARTICLE_VIEW);
         return vo;
     }
 

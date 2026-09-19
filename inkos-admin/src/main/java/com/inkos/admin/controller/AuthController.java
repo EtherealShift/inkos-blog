@@ -3,6 +3,7 @@ package com.inkos.admin.controller;
 import com.inkos.common.annotation.OperLog;
 import com.inkos.common.core.domain.Result;
 import com.inkos.common.core.enums.LogBusinessType;
+import com.inkos.framework.ratelimit.RateLimit;
 import com.inkos.framework.security.AuthService;
 import com.inkos.framework.security.LoginResult;
 import com.inkos.system.dto.LoginRequest;
@@ -32,6 +33,7 @@ public class AuthController {
     private final AuthService authService;
 
     @Operation(summary = "登录", description = "成功后返回 Sa-Token 令牌，前端放入 Authorization 头")
+    @RateLimit(count = 10, period = 60, key = "auth.login", message = "登录尝试过于频繁，请稍后再试")
     @PostMapping("/login")
     public Result<LoginResult> login(@Valid @RequestBody LoginRequest request) {
         return Result.ok("登录成功", authService.login(request));

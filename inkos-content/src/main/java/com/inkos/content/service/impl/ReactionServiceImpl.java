@@ -7,6 +7,7 @@ import com.inkos.common.core.domain.PageQuery;
 import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.enums.ResultCode;
 import com.inkos.common.exception.BusinessException;
+import com.inkos.common.metrics.InkosMetrics;
 import com.inkos.content.entity.Article;
 import com.inkos.content.entity.ArticleReaction;
 import com.inkos.content.entity.Comment;
@@ -44,6 +45,7 @@ public class ReactionServiceImpl implements ReactionService {
     private final CommentMapper commentMapper;
     private final CommentReactionMapper commentReactionMapper;
     private final ArticleService articleService;
+    private final InkosMetrics metrics;
 
     @Override
     public ReactionStateVO state(Long articleId, Long userId) {
@@ -83,6 +85,7 @@ public class ReactionServiceImpl implements ReactionService {
                 .eq(CommentReaction::getUserId, userId));
         if (removed > 0) {
             changeCommentLikeCount(commentId, -1);
+            metrics.count(InkosMetrics.REACTION_TOGGLED, "type", "comment", "action", "off");
             return false;
         }
 
@@ -96,6 +99,7 @@ public class ReactionServiceImpl implements ReactionService {
             return true;
         }
         changeCommentLikeCount(commentId, 1);
+        metrics.count(InkosMetrics.REACTION_TOGGLED, "type", "comment", "action", "on");
         return true;
     }
 
@@ -127,6 +131,7 @@ public class ReactionServiceImpl implements ReactionService {
                 .eq(ArticleReaction::getType, type));
         if (removed > 0) {
             changeArticleCount(articleId, type, -1);
+            metrics.count(InkosMetrics.REACTION_TOGGLED, "type", typeName(type), "action", "off");
             return;
         }
 
@@ -140,6 +145,11 @@ public class ReactionServiceImpl implements ReactionService {
             return;
         }
         changeArticleCount(articleId, type, 1);
+        metrics.count(InkosMetrics.REACTION_TOGGLED, "type", typeName(type), "action", "on");
+    }
+
+    private String typeName(int type) {
+        return type == ArticleReaction.TYPE_LIKE ? "like" : "favorite";
     }
 
     private boolean existsArticleReaction(Long articleId, Long userId, int type) {

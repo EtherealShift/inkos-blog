@@ -8,6 +8,7 @@ import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.enums.ArticleStatus;
 import com.inkos.common.core.enums.ResultCode;
 import com.inkos.common.exception.BusinessException;
+import com.inkos.common.metrics.InkosMetrics;
 import com.inkos.common.util.StrUtils;
 import com.inkos.content.dto.CommentForm;
 import com.inkos.content.dto.CommentQuery;
@@ -57,6 +58,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
     private final ArticleMapper articleMapper;
     private final CommentReactionMapper commentReactionMapper;
     private final ObjectProvider<AuthorNameResolver> authorNameResolverProvider;
+    private final InkosMetrics metrics;
 
     /** 生产环境打开审核：新评论默认待审，不出现在前台 */
     @Value("${inkos.comment.require-audit:false}")
@@ -131,6 +133,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         }
 
         save(comment);
+        metrics.count(InkosMetrics.COMMENT_CREATED,
+                "audit", CommentStatus.isApproved(comment.getStatus()) ? "off" : "on");
         if (CommentStatus.isApproved(comment.getStatus())) {
             changeArticleCommentCount(comment.getArticleId(), 1);
         }

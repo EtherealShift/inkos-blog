@@ -6,6 +6,7 @@ import com.inkos.content.service.CommentService;
 import com.inkos.content.service.ReactionService;
 import com.inkos.content.vo.CommentVO;
 import com.inkos.content.vo.ReactionStateVO;
+import com.inkos.framework.ratelimit.RateLimit;
 import com.inkos.framework.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +46,7 @@ public class PublicInteractionController {
 
     @Operation(summary = "发表评论或回复",
             description = "未登录为游客评论，需填 guestName；parentId 非空即为回复")
+    @RateLimit(count = 5, period = 60, key = "comment.create", message = "评论发表过于频繁，请稍后再试")
     @PostMapping("/articles/{articleId}/comments")
     public Result<Long> comment(@PathVariable Long articleId,
                                 @Valid @RequestBody CommentForm form) {
