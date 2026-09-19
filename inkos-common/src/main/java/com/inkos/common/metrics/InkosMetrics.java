@@ -22,8 +22,14 @@ public class InkosMetrics {
     /** 文章详情浏览 */
     public static final String ARTICLE_VIEW = "inkos.article.view";
 
-    /** 评论创建 */
-    public static final String COMMENT_CREATED = "inkos.comment.created";
+    /**
+     * 评论创建。
+     *
+     * <p>刻意<b>不</b>叫 {@code inkos.comment.created}：Prometheus 的 {@code <name>_created}
+     * 是为 summary/histogram 保留的伴生指标后缀，Micrometer 会把结尾的 {@code created} 丢掉，
+     * 结果暴露成 {@code inkos_comment_total} —— 名字与定义对不上，排查时极易误判。
+     */
+    public static final String COMMENT_SUBMITTED = "inkos.comment.submit";
 
     /** 互动切换（点赞 / 收藏） */
     public static final String REACTION_TOGGLED = "inkos.reaction.toggled";

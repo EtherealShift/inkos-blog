@@ -133,7 +133,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, Comment> impl
         }
 
         save(comment);
-        metrics.count(InkosMetrics.COMMENT_CREATED,
+        metrics.count(InkosMetrics.COMMENT_SUBMITTED,
                 "audit", CommentStatus.isApproved(comment.getStatus()) ? "off" : "on");
         if (CommentStatus.isApproved(comment.getStatus())) {
             changeArticleCommentCount(comment.getArticleId(), 1);
