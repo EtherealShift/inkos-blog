@@ -22,7 +22,7 @@
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>
         <!-- 仅用于 BCrypt 密码编码，不引入 Spring Security 过滤器链 -->
         <dependency>

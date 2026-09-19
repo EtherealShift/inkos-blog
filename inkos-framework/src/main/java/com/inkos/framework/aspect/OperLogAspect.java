@@ -1,6 +1,6 @@
 package com.inkos.framework.aspect;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.inkos.common.annotation.OperLog;
 import com.inkos.common.util.StrUtils;
 import com.inkos.framework.security.SecurityUtils;
