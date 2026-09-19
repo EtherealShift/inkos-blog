@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS cms_article (
     view_count      BIGINT       NOT NULL DEFAULT 0      COMMENT '浏览量',
     like_count      INT          NOT NULL DEFAULT 0      COMMENT '点赞数',
     comment_count   INT          NOT NULL DEFAULT 0      COMMENT '评论数',
+    favorite_count  INT          NOT NULL DEFAULT 0      COMMENT '收藏数',
     quality_score   INT                   DEFAULT NULL  COMMENT '内容质量分（预留字段）',
     published_at    DATETIME              DEFAULT NULL  COMMENT '发布时间',
     create_by       VARCHAR(64)           DEFAULT NULL  COMMENT '创建人',
@@ -231,3 +232,38 @@ CREATE TABLE IF NOT EXISTS cms_quote (
     PRIMARY KEY (id),
     KEY idx_cms_quote_status_sort (status, sort_order, deleted)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '首页语句库';
+
+-- ============================== 内容：互动（点赞 / 收藏）==============================
+
+-- 点赞与收藏合成一张表，用 type 区分：两者的结构、唯一性约束、查询模式完全一致，
+-- 拆成两张表只会让「查我的互动」「统计计数」这类操作都要写两遍。
+CREATE TABLE IF NOT EXISTS cms_article_reaction (
+    id          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+    article_id  BIGINT      NOT NULL                COMMENT '文章 ID',
+    user_id     BIGINT      NOT NULL                COMMENT '用户 ID',
+    type        TINYINT     NOT NULL                COMMENT '1 点赞 / 2 收藏',
+    create_by   VARCHAR(64)          DEFAULT NULL   COMMENT '创建人',
+    create_time DATETIME             DEFAULT NULL   COMMENT '创建时间',
+    update_by   VARCHAR(64)          DEFAULT NULL   COMMENT '更新人',
+    update_time DATETIME             DEFAULT NULL   COMMENT '更新时间',
+    remark      VARCHAR(500)         DEFAULT NULL   COMMENT '备注',
+    PRIMARY KEY (id),
+    -- 同一个人对同一篇文章的同一种互动只能有一条：靠唯一键兜住并发下的重复插入，
+    -- 而不是先 SELECT 再 INSERT（那中间有竞态窗口）。
+    UNIQUE KEY uk_article_reaction (article_id, user_id, type),
+    KEY idx_article_reaction_user (user_id, type, create_time)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '文章互动（点赞 / 收藏）';
+
+CREATE TABLE IF NOT EXISTS cms_comment_reaction (
+    id          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键',
+    comment_id  BIGINT      NOT NULL                COMMENT '评论 ID',
+    user_id     BIGINT      NOT NULL                COMMENT '用户 ID',
+    create_by   VARCHAR(64)          DEFAULT NULL   COMMENT '创建人',
+    create_time DATETIME             DEFAULT NULL   COMMENT '创建时间',
+    update_by   VARCHAR(64)          DEFAULT NULL   COMMENT '更新人',
+    update_time DATETIME             DEFAULT NULL   COMMENT '更新时间',
+    remark      VARCHAR(500)         DEFAULT NULL   COMMENT '备注',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_comment_reaction (comment_id, user_id),
+    KEY idx_comment_reaction_user (user_id, create_time)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '评论点赞';

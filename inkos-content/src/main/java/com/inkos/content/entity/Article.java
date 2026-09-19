@@ -83,6 +83,9 @@ public class Article extends BaseEntity {
     @TableField("comment_count")
     private Integer commentCount;
 
+    @TableField("favorite_count")
+    private Integer favoriteCount;
+
     /** 质量分，人工评估结果 */
     @TableField("quality_score")
     private Integer qualityScore;
