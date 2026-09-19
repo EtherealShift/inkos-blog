@@ -3,8 +3,8 @@ server:
   shutdown: graceful
   servlet:
     encoding:
-      charset: UTF-8
-      enabled: true
+      # charset 默认就是 UTF-8、enabled 默认就是 true，两者无需声明。
+      # force 才是非默认项：强制请求与响应都按 UTF-8 处理。
       force: true
   compression:
     enabled: true
@@ -27,8 +27,8 @@ spring:
       enabled: true
   jackson:
     default-property-inclusion: non_null
-    time-zone: GMT+8
-    date-format: yyyy-MM-dd HH:mm:ss
+    # 不声明 date-format / time-zone：这两个只作用于 java.util.Date / Calendar 系类型，
+    # 而本项目统一使用 LocalDateTime / LocalDate，由 JacksonConfig 的模块显式格式化。
   # 全部 profile 统一使用 MySQL 8。连接信息一律由环境变量驱动，
   # 仓库里不存放任何真实口令（口令走 application-local.yml 或 DB_PASSWORD）。
   datasource:
@@ -45,6 +45,15 @@ spring:
       # 必须小于 MySQL 的 wait_timeout（默认 28800s），否则会取到已被服务端关闭的连接
       max-lifetime: 1800000
       pool-name: inkos-hikari
+  # Redis：全部 profile 共用一套连接配置，环境变量驱动。
+  # 连接是惰性的 —— Redis 没启动时应用照常启动，只有真正操作 Redis 才会失败。
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 3000ms
 
 mybatis-plus:
   configuration:
@@ -73,10 +82,8 @@ sa-token:
   is-print: false
 
 springdoc:
-  api-docs:
-    path: /v3/api-docs
+  # api-docs.path 与 swagger-ui.path 保持默认（/v3/api-docs、/swagger-ui.html），无需声明
   swagger-ui:
-    path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
 
@@ -88,7 +95,12 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: when-authorized
+      # 基础配置不展开健康详情（默认即 never，适合生产）。
+      # 开发环境在 application-dev.yml 里覆盖为 always。
+      #
+      # 注意：这里不能用 when-authorized —— 它依赖 Spring Security 的 Authentication，
+      # 而本项目鉴权走 Sa-Token，Boot 永远拿不到登录态，详情会永远不显示。
+      show-details: never
 
 inkos:
   cors:

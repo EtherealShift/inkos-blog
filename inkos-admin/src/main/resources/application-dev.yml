@@ -18,6 +18,12 @@ spring:
       encoding: UTF-8
       continue-on-error: false
 
+management:
+  endpoint:
+    health:
+      # 开发环境展开组件详情：一眼能看到 MySQL、Redis 各自是否连上
+      show-details: always
+
 logging:
   level:
     com.inkos: debug

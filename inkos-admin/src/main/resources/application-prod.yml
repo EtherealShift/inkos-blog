@@ -1,8 +1,8 @@
 # ============================================================================
 # prod：MySQL 8 + Redis。
 #
-#   数据源继承 application.yml（同样的 DB_HOST / DB_PORT / DB_NAME / DB_USERNAME /
-#   DB_PASSWORD 环境变量），本文件只覆盖生产独有的差异。
+#   数据源与 Redis 连接都继承 application.yml（同样的 DB_* / REDIS_* 环境变量），
+#   本文件只覆盖生产独有的差异 —— 避免同一份连接配置在两个文件里各写一遍后漂移。
 #
 #   连接池按生产规格调整：DB_POOL_SIZE=20（或按 实例数 × (CPU 核数 × 2 + 磁盘数) 估算）。
 # ============================================================================
@@ -12,15 +12,7 @@ spring:
       # 生产不自动建表：表结构交给 Flyway/Liquibase 或 DBA 流程
       mode: never
 
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DB:0}
-      timeout: 3000ms
-
 logging:
   level:
+    # 只声明与 application.yml 不同的项；com.inkos 继承那里的 info
     root: warn
-    com.inkos: info

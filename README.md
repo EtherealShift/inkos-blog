@@ -298,6 +298,7 @@ inkos-blog/
 | JSON | **Jackson 3** | `tools.jackson`（Boot 4 默认，已从 `com.fasterxml.jackson` 迁移） |
 | 密码加密 | spring-security-crypto（仅 BCrypt） | 随 Boot 管理 |
 | 数据库 | **MySQL** | 8.0+ / InnoDB / utf8mb4（全部 profile 统一） |
+| 缓存 | **Redis** | 连接与序列化见 `RedisConfig`；本机验证于 Redis 3.2.100 |
 | 驱动 | mysql-connector-j | 随 Boot 管理 |
 | API 文档 | springdoc-openapi | 3.1.1（v3 线对应 Boot 4） |
 | 可观测性 | Micrometer + Actuator | 随 Boot 管理，暴露 Prometheus 端点 |
@@ -441,6 +442,55 @@ curl http://localhost:8080/actuator/prometheus | grep '^inkos_'
 
 标签刻意只放**低基数维度**。`userId`、`articleId` 这类放进标签会让时间序列基数爆炸；
 需要按它们分析时应该走日志或链路追踪，而不是指标。
+
+### Redis
+
+连接配置在 `application.yml`（全部 profile 共用，环境变量驱动），序列化策略在 `RedisConfig`：
+
+```yaml
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+```
+
+**连接是惰性的**：Redis 没启动时应用照常启动，只有真正操作 Redis 才会失败。
+但要注意 —— 引入 starter 后 **Redis 会成为健康检查的一部分**，Redis 不可用时
+`/actuator/health` 整体变 `DOWN`（会影响 k8s 就绪探针）。不打算强依赖它时：
+
+```yaml
+management:
+  health:
+    redis:
+      enabled: false
+```
+
+序列化用 JSON 而非 JDK 序列化，并且**开启默认类型信息** —— 否则反序列化只能得到
+`LinkedHashMap`，类型静默丢失。三处非默认选择（`As.WRAPPER_ARRAY`、
+`NON_FINAL_AND_RECORDS`、白名单 validator）的理由写在 `RedisConfig` 的注释里，
+边界由 `RedisConfigTest` 覆盖：
+
+| 存什么 | 能否读回 |
+|---|---|
+| record / POJO | ✅ 类型完整 |
+| `new ArrayList<>(...)` | ✅ 容器与元素类型都保留 |
+| `List.of(...)` / `Map.of(...)` 作为**顶层值** | ❌ **读不回来** —— 改用 `ArrayList` 或用 POJO 包一层 |
+
+### 健康检查的一个坑
+
+`management.endpoint.health.show-details` **不能写 `when-authorized`**：
+它依赖 Spring Security 的 `Authentication`，而本项目鉴权走 Sa-Token，
+Boot 永远拿不到登录态，结果是详情**永远不显示**（连 Redis / MySQL 组件都看不到）。
+
+现在的配置是：基础 `never`（生产安全），`dev` 覆盖为 `always`：
+
+```bash
+curl http://localhost:8080/actuator/health
+# {"components":{"db":{...,"status":"UP"},"redis":{"details":{"version":"3.2.100"},"status":"UP"}},"status":"UP"}
+```
 
 ### 接口限流
 
