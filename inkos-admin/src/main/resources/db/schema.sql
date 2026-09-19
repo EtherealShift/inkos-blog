@@ -8,9 +8,7 @@
 --     DATETIME 原样存取不做时区换算，也不会撞上 TIMESTAMP 的 2038 上限。
 --   * 索引内联在 CREATE TABLE 中，而不是独立的 CREATE INDEX ——
 --     MySQL 不支持 CREATE INDEX IF NOT EXISTS，内联才能保证脚本可重复执行。
---   * 本脚本同时被 dev profile 的 H2（MODE=MySQL 兼容模式）执行，用于零依赖启动。
---     需要 PostgreSQL 等其它方言时请另写脚本；跨方言表结构应由 Flyway/Liquibase 管理，
---     不要指望一份 DDL 通吃所有数据库。
+--   * 全部 profile（含测试）都跑在同一套 MySQL 方言上，不存在跨库兼容包袱。
 --
 -- 生产环境请改用 Flyway/Liquibase 管理版本，并把 spring.sql.init.mode 设为 never。
 -- ============================================================================

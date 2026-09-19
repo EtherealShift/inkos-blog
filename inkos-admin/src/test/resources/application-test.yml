@@ -1,0 +1,15 @@
+# ============================================================================
+# 测试专用：连独立的 inkos_test 库，避免污染开发库数据。
+#
+#   需要先建库（只需一次）：
+#     CREATE DATABASE inkos_test DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+#
+#   与 dev 一起激活（@ActiveProfiles({"dev", "test"})）：
+#   dev 负责建表与种子数据，本文件只把库名换成 inkos_test。
+# ============================================================================
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:inkos_test}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+  sql:
+    init:
+      mode: always

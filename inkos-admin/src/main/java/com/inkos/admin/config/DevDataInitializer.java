@@ -31,7 +31,7 @@ import java.util.List;
  * <ol>
  *   <li>密码需要 BCrypt 加密，不能把明文或写死的哈希塞进 SQL；</li>
  *   <li>菜单/角色/关联表之间存在 ID 依赖，Java 里能拿到自增主键，SQL 里要写一堆子查询；</li>
- *   <li>H2 与 MySQL 的方言差异可以直接规避。</li>
+ *   <li>种子数据必须幂等：生产与开发共用同一套建表脚本，重复执行不能产生脏数据。</li>
  * </ol>
  *
  * <p>仅在 {@code dev} profile 生效，且已有 admin 用户时直接跳过，可重复启动。
@@ -336,7 +336,7 @@ public class DevDataInitializer implements ApplicationRunner {
                 MySQL **不支持** `CREATE INDEX IF NOT EXISTS`：
 
                 ```sql
-                -- PostgreSQL / H2 可以反复执行
+                -- PostgreSQL 可以反复执行
                 CREATE INDEX IF NOT EXISTS idx_x ON t (c);
 
                 -- MySQL 只能内联，才能保证脚本可重复执行

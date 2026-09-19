@@ -16,6 +16,9 @@ spring:
     name: inkos-blog
   profiles:
     active: dev
+  # 个人数据库口令等本地敏感配置。文件不存在时静默跳过，因此可以安全地留在 .gitignore 里。
+  config:
+    import: optional:classpath:application-local.yml
   lifecycle:
     timeout-per-shutdown-phase: 30s
   threads:
@@ -26,6 +29,22 @@ spring:
     default-property-inclusion: non_null
     time-zone: GMT+8
     date-format: yyyy-MM-dd HH:mm:ss
+  # 全部 profile 统一使用 MySQL 8。连接信息一律由环境变量驱动，
+  # 仓库里不存放任何真实口令（口令走 application-local.yml 或 DB_PASSWORD）。
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:inkos}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    hikari:
+      # 连接池不是越大越好：MySQL 的瓶颈通常在服务端并发连接与 IO。
+      # 经验值是 CPU 核数 × 2 + 磁盘数；多实例部署时还要乘以实例数一起评估。
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 5
+      connection-timeout: 3000
+      # 必须小于 MySQL 的 wait_timeout（默认 28800s），否则会取到已被服务端关闭的连接
+      max-lifetime: 1800000
+      pool-name: inkos-hikari
 
 mybatis-plus:
   configuration:

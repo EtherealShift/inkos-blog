@@ -22,9 +22,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 端到端冒烟测试。
  *
  * <p>覆盖三层真实链路：默认拒绝的鉴权 → 登录签发令牌 → 带令牌访问受保护接口。
- * 使用 H2 内存库与 dev profile，不依赖任何外部中间件。
+ * 运行在本机 MySQL 的 {@code inkos_test} 库上（见 application-test.yml），
+ * 因此需要本地有一个可连的 MySQL，口令与开发环境走同一份 application-local.yml。
  */
-@ActiveProfiles("dev")
+@ActiveProfiles({"dev", "test"})
 @AutoConfigureMockMvc
 @SpringBootTest
 class InkosApplicationTests {

@@ -2,7 +2,7 @@
 
 > `inkos` = **Ink** + **OS**。
 
-一个**分层架构的 Java 后端**，数据库为 **MySQL 8**。不是空壳：登录鉴权、RBAC 权限、文章 CRUD 全部是**能跑通的真实代码**，`git clone` 后无需任何外部中间件即可启动并调用。
+一个**分层架构的 Java 后端**，数据库为 **MySQL 8**。不是空壳：登录鉴权、RBAC 权限、文章 CRUD 全部是**能跑通的真实代码**，建表与种子数据在首次启动时自动完成。
 
 ---
 
@@ -13,7 +13,39 @@
 | 组件 | 版本 | 说明 |
 |---|---|---|
 | JDK | **21+** | 推荐 21 LTS；已在 JDK 25 上验证 |
+| MySQL | **8.0+** | 唯一的外部依赖；建库语句见下 |
 | Maven | 3.9+ | 可选 —— 仓库自带 Maven Wrapper |
+
+### 准备数据库
+
+建库只做一次（跑测试还需要第二个库）：
+
+```sql
+CREATE DATABASE inkos      DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE DATABASE inkos_test DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+```
+
+表结构与种子数据由应用在首次启动时自动创建（`CREATE TABLE IF NOT EXISTS`，可反复执行），
+**不需要手工执行 `schema.sql`**。
+
+数据库口令有两个来源，任选其一：
+
+```bash
+# A. 环境变量 —— CI 或临时运行
+DB_PASSWORD=你的口令 ./mvnw -pl inkos-admin -am spring-boot:run
+```
+
+```yaml
+# B. 本机个人配置文件（开发推荐）—— 该文件已被 .gitignore 忽略，clone 后自行创建
+#    inkos-admin/src/main/resources/application-local.yml
+spring:
+  datasource:
+    username: root
+    password: 你的口令
+```
+
+连接信息默认 `127.0.0.1:3306/inkos`、用户 `root`，可用
+`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` 覆盖。
 
 ### 启动
 
@@ -53,35 +85,38 @@ java -jar inkos-admin/target/inkos-blog.jar
 | 探活（免登录） | http://localhost:8080/api/v1/public/ping |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | 健康检查 | http://localhost:8080/actuator/health |
-| H2 控制台 | http://localhost:8080/h2-console |
 
-H2 控制台连接参数：JDBC URL `jdbc:h2:mem:inkos`、用户名 `sa`、密码留空。
-
-> **零依赖启动**：`dev` profile 用 H2 内存库，跑的是 **MySQL 兼容模式**，
-> 执行的正是生产那份 `db/schema.sql`。不需要装 MySQL / Redis。
+> `dev` 首次启动会自动建表并灌入种子数据（已有 `admin` 用户时自动跳过）。
+> 想重置开发库：`DROP DATABASE inkos` 后重建，下次启动会重新初始化。
 
 ### 三个 profile
 
 | profile | 数据库 | 建表方式 | 用途 |
 |---|---|---|---|
-| `dev`（默认） | H2 内存库（`MODE=MySQL`） | 启动时自动执行 `schema.sql` | 零依赖开发、跑测试 |
-| `local` | 真实 MySQL 8 | 启动时自动执行 `schema.sql` | 联调、提前暴露方言差异 |
-| `prod` | 真实 MySQL 8 + Redis | 不自动建表（交给 Flyway） | 生产 |
+| `dev`（默认） | MySQL 8 | 启动时执行 `schema.sql` + 种子数据 | 本地开发 |
+| `test` | MySQL 8（`inkos_test` 库） | 启动时执行 `schema.sql` + 种子数据 | 集成测试 |
+| `prod` | MySQL 8 + Redis | 不自动建表（交给 Flyway / DBA） | 生产 |
 
-连真实 MySQL 开发：
+> `local` **不是** profile，而是 `application-local.yml` 这份被 gitignore 的个人配置文件，
+> 由 `spring.config.import` 无条件加载（文件不存在时静默跳过），用来放自己的数据库口令。
+
+跑测试：
 
 ```bash
-# 1. 起一个 MySQL（宿主端口刻意用 3307，避开本机已有的 3306 实例）
-docker compose -f deploy/docker-compose.yml up -d mysql
-
-# 2. 用 local profile 启动
-./mvnw -pl inkos-admin -am spring-boot:run -Dspring-boot.run.profiles=local
-
-# 3. 连自己的 MySQL 就覆盖环境变量
-#    DB_PORT=3306 DB_USERNAME=root DB_PASSWORD=xxx
+./mvnw clean verify     # 连 inkos_test 库，不污染开发数据
 ```
 
-`deploy/docker-compose.yml` 里的开发口令全部支持环境变量覆盖，默认值只面向本地：
+本机没有 MySQL 时，可以用仓库自带的 compose 起一个：
+
+```bash
+# 起 MySQL（宿主端口是 3307，避开本机常见的 3306 实例）
+docker compose -f deploy/docker-compose.yml up -d mysql
+
+# 记得把端口告诉应用
+DB_PORT=3307 ./mvnw -pl inkos-admin -am spring-boot:run
+```
+
+`deploy/docker-compose.yml` 里的开发口令同样支持环境变量覆盖，默认值只面向本地：
 
 ```bash
 MYSQL_ROOT_PASSWORD=xxx REDIS_PASSWORD=yyy docker compose -f deploy/docker-compose.yml up -d
@@ -235,9 +270,10 @@ inkos-blog/
     │   ├── integration/   SysUserAuthorNameResolver（端口适配器）
     │   └── controller/    Auth PublicContent AdminContent SysUser SysRole SysMenu
     └── resources/
-        ├── application.yml / -dev.yml / -local.yml / -prod.yml
+        ├── application.yml / -dev.yml / -prod.yml
+        ├── application-local.yml            个人数据库口令（已 gitignore，需自行创建）
         ├── logback-spring.xml
-        └── db/schema.sql                    建表脚本（MySQL 方言，H2 兼容模式复用）
+        └── db/schema.sql                    建表脚本（MySQL 方言，可反复执行）
 ```
 
 ---
@@ -251,8 +287,7 @@ inkos-blog/
 | 鉴权 | **Sa-Token** | 1.45.0 |
 | ORM | **MyBatis-Plus** | 3.5.17 |
 | 密码加密 | spring-security-crypto（仅 BCrypt） | 随 Boot 管理 |
-| 数据库（开发） | H2（**MySQL 兼容模式**） | 随 Boot 管理 |
-| 数据库（生产） | **MySQL** | 8.0+ / InnoDB / utf8mb4 |
+| 数据库 | **MySQL** | 8.0+ / InnoDB / utf8mb4（全部 profile 统一） |
 | 驱动 | mysql-connector-j | 随 Boot 管理 |
 | API 文档 | springdoc-openapi | 2.8.9 |
 | 代码简化 | Lombok | 1.18.46 |
@@ -354,19 +389,18 @@ content:article:add  内容 - 文章 - 新增
 5. 建表语句追加到 `db/schema.sql`
 6. 在 `DevDataInitializer` 里补种子数据与菜单权限
 
-### 切换到真实 MySQL
-
-`dev` 默认走 H2；连真实 MySQL 用 `local` profile（见上文「三个 profile」），生产用 `prod`：
+### 生产部署
 
 ```bash
 SPRING_PROFILES_ACTIVE=prod \
 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=inkos DB_USERNAME=inkos DB_PASSWORD=xxx \
+DB_POOL_SIZE=20 \
 java -jar inkos-admin/target/inkos-blog.jar
 ```
 
-**一份 DDL 同时服务 dev 与生产**：`db/schema.sql` 用 MySQL 方言编写
-（InnoDB / utf8mb4 / 内联索引 / TINYINT / DATETIME），H2 以 `MODE=MySQL` 执行它。
-这能在开发阶段就暴露方言问题，比维护两套建表语句可靠得多。
+**开发与生产跑同一套 MySQL 方言**：`db/schema.sql` 用 MySQL 方言编写
+（InnoDB / utf8mb4 / 内联索引 / TINYINT / DATETIME），所有 profile 执行的都是它，
+不存在「本地能跑、线上方言不兼容」的落差。
 
 两处刻意的取舍：
 

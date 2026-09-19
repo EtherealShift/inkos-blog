@@ -31,7 +31,7 @@ public class MybatisPlusConfig {
         interceptor.addInnerInterceptor(new BlockAttackInnerInterceptor());
 
         // 分页：不指定 DbType，由 MP 从 DataSource 自动识别，
-        // 这样 dev(H2) 与 prod(MySQL) 可以共用同一份代码。
+        // 这样切换数据库（或日后接入多数据源）时无需改动代码。
         PaginationInnerInterceptor pagination = new PaginationInnerInterceptor();
         pagination.setMaxLimit(MAX_PAGE_SIZE);
         pagination.setOverflow(false);

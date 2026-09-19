@@ -1,33 +1,22 @@
 # ============================================================================
-# dev（默认）：零外部依赖，clone 下来直接能跑
+# dev（默认）：连本机 MySQL 8 开发
 #
-#   * H2 内存库，跑在 MySQL 兼容模式下，执行的是与生产同一份 db/schema.sql
-#     —— 目的是尽早暴露 DDL 与 SQL 的方言问题，而不是维护两套建表语句。
-#   * 每次启动都是全新库 + 种子数据，不污染任何本地数据。
-#   * 想连真实 MySQL 请用 local profile（见 application-local.yml）。
+#   * 建表：启动时执行 db/schema.sql（CREATE TABLE IF NOT EXISTS，可反复执行）。
+#   * 种子数据：首次启动灌入（已有 admin 用户时自动跳过），见 DevDataInitializer。
+#   * 开发库的表结构改动，直接改 schema.sql 后重建库即可：
+#       DROP DATABASE inkos; CREATE DATABASE inkos DEFAULT CHARACTER SET utf8mb4;
+#
+#   连接信息在 application.yml 里统一配置，默认 127.0.0.1:3306/inkos、用户 root。
+#   口令请放 application-local.yml（已 gitignore），或通过环境变量传入：
+#       DB_PASSWORD=xxx ./mvnw -pl inkos-admin -am spring-boot:run
 # ============================================================================
 spring:
-  datasource:
-    driver-class-name: org.h2.Driver
-    # MODE=MySQL 让本地 DDL/SQL 与生产 MySQL 保持同一套写法
-    url: jdbc:h2:mem:inkos;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    username: sa
-    password: ""
-    hikari:
-      maximum-pool-size: 10
-      pool-name: inkos-hikari
   sql:
     init:
       mode: always
       schema-locations: classpath:db/schema.sql
       encoding: UTF-8
       continue-on-error: false
-  h2:
-    console:
-      # 浏览器访问 http://localhost:8080/h2-console 查看内存库数据
-      # JDBC URL 填 jdbc:h2:mem:inkos，用户名 sa，密码留空
-      enabled: true
-      path: /h2-console
 
 logging:
   level:
