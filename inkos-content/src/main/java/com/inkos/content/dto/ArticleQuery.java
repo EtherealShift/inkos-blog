@@ -31,4 +31,12 @@ public class ArticleQuery extends PageQuery {
 
     /** 按状态过滤，为空表示不限（前台查询会强制覆盖为已发布） */
     private Integer status;
+
+    /**
+     * 关键字是否也匹配正文。
+     *
+     * <p>默认关闭：正文体积远大于标题摘要，列表页没必要为它付出代价。
+     * 检索接口会显式打开。
+     */
+    private Boolean searchInContent;
 }

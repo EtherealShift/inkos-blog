@@ -1,12 +1,16 @@
 package com.inkos.admin.controller;
 
+import com.inkos.common.core.domain.PageQuery;
+import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.domain.Result;
 import com.inkos.content.service.ReactionService;
+import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ReactionStateVO;
 import com.inkos.framework.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,5 +49,11 @@ public class InteractionController {
     @PostMapping("/comments/{commentId}/like")
     public Result<Boolean> toggleCommentLike(@PathVariable Long commentId) {
         return Result.ok(reactionService.toggleCommentLike(commentId, SecurityUtils.getUserId()));
+    }
+
+    @Operation(summary = "我的收藏", description = "按收藏时间倒序分页；已下线的文章会被跳过")
+    @GetMapping("/me/favorites")
+    public Result<PageResult<ArticleListVO>> myFavorites(PageQuery query) {
+        return Result.ok(reactionService.pageFavorites(SecurityUtils.getUserId(), query));
     }
 }

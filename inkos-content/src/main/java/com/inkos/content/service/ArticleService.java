@@ -5,7 +5,9 @@ import com.inkos.content.dto.ArticleForm;
 import com.inkos.content.dto.ArticleQuery;
 import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ArticleVO;
+import com.inkos.content.vo.SearchResultVO;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -92,4 +94,26 @@ public interface ArticleService {
      * @return 文章列表
      */
     List<ArticleListVO> listRelated(Long articleId, int limit);
+
+    /**
+     * 检索已发布文章。
+     *
+     * <p>与 {@link #pagePublic} 的区别：会匹配正文，并为每条结果附带命中片段。
+     * 同样强制只看已发布，忽略入参 status。
+     *
+     * @param query 查询条件，keyword 为必填（由上层校验）
+     * @return 带命中片段的检索结果
+     */
+    PageResult<SearchResultVO> search(ArticleQuery query);
+
+    /**
+     * 按 id 批量取已发布文章的列表视图，保持传入顺序。
+     *
+     * <p>供「我的收藏」这类先由别的表定序、再回表取内容的场景使用：
+     * 顺序由调用方的业务语义决定（收藏时间倒序），不能让 SQL 重新排序。
+     *
+     * @param ids 文章 id 集合
+     * @return 已发布文章的列表视图，顺序与入参一致；不存在或未发布的会被跳过
+     */
+    List<ArticleListVO> listPublishedByIds(Collection<Long> ids);
 }

@@ -24,6 +24,7 @@ import com.inkos.content.port.AuthorNameResolver;
 import com.inkos.content.service.ArticleService;
 import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ArticleVO;
+import com.inkos.content.vo.SearchResultVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -113,6 +115,43 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         baseMapper.selectPage(page, buildWrapper(query, statusOverride));
         List<ArticleListVO> records = toListVos(page.getRecords());
         return PageResult.of(records, page.getTotal(), page.getCurrent(), page.getSize());
+    }
+
+    @Override
+    public PageResult<SearchResultVO> search(ArticleQuery query) {
+        // 检索与列表的唯一语义差别就是「正文也匹配」，在这里强制打开，
+        // 调用方无需（也不应）自己设置
+        query.setSearchInContent(Boolean.TRUE);
+        Page<Article> page = new Page<>(query.safePageNum(), query.safePageSize());
+        baseMapper.selectPage(page, buildWrapper(query, ArticleStatus.PUBLISHED.getCode()));
+
+        List<ArticleListVO> vos = toListVos(page.getRecords());
+        // 按 id 关联而不是按下标：toListVos 万一过滤了记录，下标就会错位
+        String keyword = StrUtils.trimToEmpty(query.getKeyword());
+        Map<Long, String> snippets = page.getRecords().stream()
+                .collect(Collectors.toMap(Article::getId, article -> buildSnippet(article, keyword), (a, b) -> a));
+        List<SearchResultVO> records = vos.stream()
+                .map(vo -> new SearchResultVO(vo, vo.id() == null ? null : snippets.get(vo.id())))
+                .toList();
+        return PageResult.of(records, page.getTotal(), page.getCurrent(), page.getSize());
+    }
+
+    @Override
+    public List<ArticleListVO> listPublishedByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Article> articles = list(new LambdaQueryWrapper<Article>()
+                .in(Article::getId, ids)
+                .eq(Article::getStatus, ArticleStatus.PUBLISHED.getCode()));
+        if (articles.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, ArticleListVO> byId = toListVos(articles).stream()
+                .collect(Collectors.toMap(ArticleListVO::id, Function.identity(), (a, b) -> a));
+        // 顺序由调用方决定（例如收藏时间倒序），SQL 不负责排序；
+        // 已下线或已删除的文章会在这里被自然跳过
+        return ids.stream().map(byId::get).filter(Objects::nonNull).distinct().toList();
     }
 
     @Override
@@ -244,6 +283,31 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
 
     // ==================== 内部工具 ====================
 
+    /** 命中片段在关键字两侧各保留的字符数 */
+    private static final int SNIPPET_PADDING = 40;
+
+    /**
+     * 在正文里定位关键字并截取上下文。
+     *
+     * <p>命中只落在标题或摘要时返回 null —— 不硬凑一段与关键字无关的正文片段，
+     * 那只会让用户以为搜错了。
+     */
+    private String buildSnippet(Article article, String keyword) {
+        String content = article.getContentMd();
+        if (StrUtils.isBlank(keyword) || StrUtils.isBlank(content)) {
+            return null;
+        }
+        int index = StrUtils.indexOfIgnoreCase(content, keyword);
+        if (index < 0) {
+            return null;
+        }
+        int start = Math.max(0, index - SNIPPET_PADDING);
+        int end = Math.min(content.length(), index + keyword.length() + SNIPPET_PADDING);
+        // 正文里的换行与多余空白在片段里压平，否则响应里会出现大段空白
+        String fragment = content.substring(start, end).replaceAll("\\s+", " ").trim();
+        return (start > 0 ? "…" : "") + fragment + (end < content.length() ? "…" : "");
+    }
+
     /** 组装分页条件，排序字段走白名单 */
     private LambdaQueryWrapper<Article> buildWrapper(ArticleQuery query, Integer status) {
         LambdaQueryWrapper<Article> wrapper = new LambdaQueryWrapper<>();
@@ -263,7 +327,15 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         }
         if (StrUtils.isNotBlank(query.getKeyword())) {
             String keyword = query.getKeyword().trim();
-            wrapper.and(w -> w.like(Article::getTitle, keyword).or().like(Article::getSummary, keyword));
+            if (Boolean.TRUE.equals(query.getSearchInContent())) {
+                // 检索接口：正文一并匹配。LIKE '%kw%' 无法走索引，
+                // 内容量上来后应换成 MySQL ngram 全文索引或外接 Elasticsearch。
+                wrapper.and(w -> w.like(Article::getTitle, keyword)
+                        .or().like(Article::getSummary, keyword)
+                        .or().like(Article::getContentMd, keyword));
+            } else {
+                wrapper.and(w -> w.like(Article::getTitle, keyword).or().like(Article::getSummary, keyword));
+            }
         }
         applyOrder(wrapper, query.getOrderBy(), Boolean.TRUE.equals(query.getAsc()));
         return wrapper;

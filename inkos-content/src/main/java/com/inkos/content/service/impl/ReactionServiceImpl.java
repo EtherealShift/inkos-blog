@@ -2,6 +2,9 @@ package com.inkos.content.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.inkos.common.core.domain.PageQuery;
+import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.enums.ResultCode;
 import com.inkos.common.exception.BusinessException;
 import com.inkos.content.entity.Article;
@@ -12,12 +15,16 @@ import com.inkos.content.mapper.ArticleMapper;
 import com.inkos.content.mapper.ArticleReactionMapper;
 import com.inkos.content.mapper.CommentMapper;
 import com.inkos.content.mapper.CommentReactionMapper;
+import com.inkos.content.service.ArticleService;
 import com.inkos.content.service.ReactionService;
+import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ReactionStateVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 互动服务实现。
@@ -36,6 +43,7 @@ public class ReactionServiceImpl implements ReactionService {
     private final ArticleReactionMapper articleReactionMapper;
     private final CommentMapper commentMapper;
     private final CommentReactionMapper commentReactionMapper;
+    private final ArticleService articleService;
 
     @Override
     public ReactionStateVO state(Long articleId, Long userId) {
@@ -89,6 +97,25 @@ public class ReactionServiceImpl implements ReactionService {
         }
         changeCommentLikeCount(commentId, 1);
         return true;
+    }
+
+    @Override
+    public PageResult<ArticleListVO> pageFavorites(Long userId, PageQuery query) {
+        // 先按收藏时间分页查互动表（它是「顺序的事实来源」），再回表取文章内容。
+        // 反过来做（先查文章再筛收藏）无法正确分页。
+        Page<ArticleReaction> page = articleReactionMapper.selectPage(
+                new Page<>(query.safePageNum(), query.safePageSize()),
+                new LambdaQueryWrapper<ArticleReaction>()
+                        .eq(ArticleReaction::getUserId, userId)
+                        .eq(ArticleReaction::getType, ArticleReaction.TYPE_FAVORITE)
+                        .orderByDesc(ArticleReaction::getCreateTime)
+                        .orderByDesc(ArticleReaction::getId));
+
+        List<Long> articleIds = page.getRecords().stream()
+                .map(ArticleReaction::getArticleId)
+                .toList();
+        List<ArticleListVO> records = articleService.listPublishedByIds(articleIds);
+        return PageResult.of(records, page.getTotal(), page.getCurrent(), page.getSize());
     }
 
     private void toggleArticleReaction(Long articleId, Long userId, int type) {

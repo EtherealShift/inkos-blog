@@ -1,5 +1,8 @@
 package com.inkos.content.service;
 
+import com.inkos.common.core.domain.PageQuery;
+import com.inkos.common.core.domain.PageResult;
+import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ReactionStateVO;
 
 /**
@@ -24,4 +27,15 @@ public interface ReactionService {
      * @return true 表示操作后处于「已点赞」状态
      */
     boolean toggleCommentLike(Long commentId, Long userId);
+
+    /**
+     * 我的收藏分页，按收藏时间倒序。
+     *
+     * <p>已下线或已删除的文章会被跳过（分页总数仍以收藏记录为准），
+     * 这是刻意的：用户取消收藏不该被下线文章绑架，但也不该再看到它。
+     *
+     * @param userId 用户 id
+     * @param query  分页参数
+     */
+    PageResult<ArticleListVO> pageFavorites(Long userId, PageQuery query);
 }

@@ -2,6 +2,9 @@ package com.inkos.admin.controller;
 
 import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.domain.Result;
+import com.inkos.common.core.enums.ResultCode;
+import com.inkos.common.exception.BusinessException;
+import com.inkos.common.util.StrUtils;
 import com.inkos.content.dto.ArticleQuery;
 import com.inkos.content.service.ArticleService;
 import com.inkos.content.service.CategoryService;
@@ -11,6 +14,7 @@ import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ArticleVO;
 import com.inkos.content.vo.CategoryVO;
 import com.inkos.content.vo.QuoteVO;
+import com.inkos.content.vo.SearchResultVO;
 import com.inkos.content.vo.TagVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -77,5 +81,16 @@ public class PublicContentController {
     @GetMapping("/quotes")
     public Result<List<QuoteVO>> quotes(@RequestParam(defaultValue = "8") int limit) {
         return Result.ok(quoteService.listPublic(limit));
+    }
+
+    @Operation(summary = "检索文章",
+            description = "关键字匹配标题 / 摘要 / 正文，可叠加分类、标签过滤；命中正文时返回上下文片段")
+    @GetMapping("/search")
+    public Result<PageResult<SearchResultVO>> search(ArticleQuery query) {
+        if (StrUtils.isBlank(query.getKeyword())) {
+            // 没关键字的「检索」等于全量列表，直接拒绝比悄悄退化成列表更有用
+            throw BusinessException.of(ResultCode.BAD_REQUEST, "检索关键字不能为空");
+        }
+        return Result.ok(articleService.search(query));
     }
 }
