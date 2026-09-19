@@ -298,7 +298,7 @@ inkos-blog/
 | JSON | **Jackson 3** | `tools.jackson`（Boot 4 默认，已从 `com.fasterxml.jackson` 迁移） |
 | 密码加密 | spring-security-crypto（仅 BCrypt） | 随 Boot 管理 |
 | 数据库 | **MySQL** | 8.0+ / InnoDB / utf8mb4（全部 profile 统一） |
-| 缓存 | **Redis** | 连接与序列化见 `RedisConfig`；本机验证于 Redis 3.2.100 |
+| 缓存 | **Redis** | 连接与序列化见 `RedisConfig`；本机验证于 Redis 8.10.2（Lettuce 协商到 RESP3） |
 | 驱动 | mysql-connector-j | 随 Boot 管理 |
 | API 文档 | springdoc-openapi | 3.1.1（v3 线对应 Boot 4） |
 | 可观测性 | Micrometer + Actuator | 随 Boot 管理，暴露 Prometheus 端点 |
@@ -489,7 +489,7 @@ Boot 永远拿不到登录态，结果是详情**永远不显示**（连 Redis /
 
 ```bash
 curl http://localhost:8080/actuator/health
-# {"components":{"db":{...,"status":"UP"},"redis":{"details":{"version":"3.2.100"},"status":"UP"}},"status":"UP"}
+# {"components":{"db":{...,"status":"UP"},"redis":{"details":{"version":"8.10.2"},"status":"UP"}},"status":"UP"}
 ```
 
 ### 接口限流
