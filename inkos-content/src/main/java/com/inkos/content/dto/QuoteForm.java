@@ -19,6 +19,13 @@ public record QuoteForm(
 
         Integer sortOrder,
 
-        Integer status
+        @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(1)
+        Integer status,
+
+        @Size(max = 80, message = "首屏标题不能超过 80 字")
+        String headline,
+
+        @Size(max = 240, message = "首屏说明不能超过 240 字")
+        String description
 ) {
 }

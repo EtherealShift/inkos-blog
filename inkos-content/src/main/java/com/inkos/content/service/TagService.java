@@ -15,6 +15,10 @@ public interface TagService {
      * @return 标签列表
      */
     List<TagVO> cloud();
+    List<TagVO> listAdmin();
+    Long create(com.inkos.content.dto.TagForm form);
+    void update(com.inkos.content.dto.TagForm form);
+    void delete(Long id);
 
     /**
      * 按名称批量解析标签 id，不存在的标签自动创建。

@@ -37,6 +37,9 @@ public record ArticleListVO(
         Integer likeCount,
         Integer commentCount,
         Integer readingMinutes,
-        LocalDateTime publishedAt
+        LocalDateTime publishedAt,
+        Integer status,
+        LocalDateTime updateTime,
+        Integer visibility
 ) {
 }

@@ -221,6 +221,8 @@ CREATE TABLE IF NOT EXISTS cms_quote (
     id          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
     content     VARCHAR(180) NOT NULL                COMMENT '语句正文',
     attribution VARCHAR(80)           DEFAULT NULL  COMMENT '署名或出处',
+    headline    VARCHAR(80)           DEFAULT NULL  COMMENT '首屏轮换标题，可换行',
+    description VARCHAR(240)          DEFAULT NULL  COMMENT '首屏轮换说明',
     sort_order  INT          NOT NULL DEFAULT 0      COMMENT '展示顺序',
     status      TINYINT      NOT NULL DEFAULT 1      COMMENT '1 启用 / 0 停用',
     create_by   VARCHAR(64)           DEFAULT NULL  COMMENT '创建人',

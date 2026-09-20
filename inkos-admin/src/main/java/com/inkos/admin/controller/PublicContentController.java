@@ -16,6 +16,7 @@ import com.inkos.content.vo.CategoryVO;
 import com.inkos.content.vo.QuoteVO;
 import com.inkos.content.vo.SearchResultVO;
 import com.inkos.content.vo.TagVO;
+import com.inkos.framework.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -52,10 +53,10 @@ public class PublicContentController {
         return Result.ok(articleService.pagePublic(query));
     }
 
-    @Operation(summary = "文章详情", description = "按 slug 查询，并累加浏览量")
+    @Operation(summary = "文章详情", description = "按 slug 查询，并累加浏览量（同一访客在去重窗口内只计一次）")
     @GetMapping("/articles/{slug}")
     public Result<ArticleVO> article(@PathVariable String slug) {
-        return Result.ok(articleService.getBySlug(slug));
+        return Result.ok(articleService.getBySlug(slug, viewerKey()));
     }
 
     @Operation(summary = "相关文章", description = "同分类下的其它已发布文章")
@@ -92,5 +93,19 @@ public class PublicContentController {
             throw BusinessException.of(ResultCode.BAD_REQUEST, "检索关键字不能为空");
         }
         return Result.ok(articleService.search(query));
+    }
+
+    /**
+     * 阅读计数的去重维度。
+     *
+     * <p>登录用户按用户去重、游客按 IP 去重 —— 与限流用的是同一套思路：
+     * 一个 IP 后面可能是整栋楼的人，所以只要拿得到用户身份就优先按用户算。
+     *
+     * <p>这是 Web 层的关注点（只有这里同时看得到请求头与登录态），因此在控制器里算出
+     * 标识、以参数交给服务层，内容层不必依赖 servlet API。
+     */
+    private String viewerKey() {
+        Long userId = SecurityUtils.getUserIdOrNull();
+        return userId != null ? "u:" + userId : "ip:" + SecurityUtils.getClientIp();
     }
 }

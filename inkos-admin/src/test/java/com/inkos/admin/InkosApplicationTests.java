@@ -15,6 +15,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -115,9 +117,66 @@ class InkosApplicationTests {
                 .andExpect(jsonPath("$.data[0].content").value("把时间折进一页纸。"));
     }
 
-    /**
-     * 登录取令牌。
-     */
+    @Test
+    @DisplayName("后台列表返回状态与更新时间，搜索和分页可组合")
+    void adminArticleListSupportsWorkspace() throws Exception {
+        String token = login("admin", "admin123");
+        mockMvc.perform(get("/api/v1/admin/articles")
+                        .header("Authorization", "Bearer " + token)
+                        .param("status", "2").param("keyword", "模块化")
+                        .param("orderBy", "updateTime").param("pageSize", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].status").value(2))
+                .andExpect(jsonPath("$.data.records[0].updateTime").isNotEmpty());
+        mockMvc.perform(get("/api/v1/admin/articles")
+                        .header("Authorization", "Bearer " + token)
+                        .param("keyword", "模块化").param("pageSize", "1").param("pageNum", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records").isEmpty());
+    }
+
+    @Test
+    @DisplayName("公开列表叠加分类标签过滤，无匹配时返回空分页")
+    void publicArticleFiltersCompose() throws Exception {
+        mockMvc.perform(get("/api/v1/public/articles")
+                        .param("keyword", "模块化").param("categoryId", "2")
+                        .param("orderBy", "viewCount").param("pageSize", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].categoryId").value("2"));
+        mockMvc.perform(get("/api/v1/public/articles")
+                        .param("keyword", "模块化").param("categoryId", "2").param("tagId", "999999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.records").isEmpty());
+    }
+
+    @Test
+    @DisplayName("开发来源的预检和真实登录均被接受，陌生来源被拒绝")
+    void corsAllowsFrontendOriginsOnly() throws Exception {
+        for (String origin : new String[]{"http://localhost:4173", "http://127.0.0.1:4173"}) {
+            mockMvc.perform(options("/api/v1/auth/login")
+                            .header("Origin", origin)
+                            .header("Access-Control-Request-Method", "POST")
+                            .header("Access-Control-Request-Headers", "content-type"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+            mockMvc.perform(post("/api/v1/auth/login").header("Origin", origin)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"username":"admin","password":"admin123","rememberMe":false}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin))
+                    .andExpect(jsonPath("$.data.tokenValue").isNotEmpty());
+        }
+        mockMvc.perform(options("/api/v1/auth/login")
+                        .header("Origin", "https://untrusted.example")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden());
+    }
+
+    /** 登录取令牌。 */
     private String login(String username, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -31,6 +31,12 @@ public class Quote extends BaseEntity {
     @TableField("attribution")
     private String attribution;
 
+    @TableField("headline")
+    private String headline;
+
+    @TableField("description")
+    private String description;
+
     @TableField("sort_order")
     private Integer sortOrder;
 

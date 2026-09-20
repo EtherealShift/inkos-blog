@@ -44,6 +44,37 @@ public class AdminContentController {
     private final ArticleService articleService;
     private final CategoryService categoryService;
     private final QuoteService quoteService;
+    private final com.inkos.content.service.TagService tagService;
+
+    @GetMapping("/tags")
+    @SaCheckPermission("content:tag:list")
+    public Result<List<com.inkos.content.vo.TagVO>> tags() { return Result.ok(tagService.listAdmin()); }
+
+    @PostMapping("/tags")
+    @SaCheckPermission("content:tag:add")
+    @OperLog(title = "标签管理", businessType = LogBusinessType.INSERT)
+    public Result<Long> createTag(@Validated(ValidGroup.Create.class) @RequestBody com.inkos.content.dto.TagForm form) { return Result.ok(tagService.create(form)); }
+
+    @PutMapping("/tags")
+    @SaCheckPermission("content:tag:edit")
+    @OperLog(title = "标签管理", businessType = LogBusinessType.UPDATE)
+    public Result<Void> updateTag(@Validated(ValidGroup.Update.class) @RequestBody com.inkos.content.dto.TagForm form) { tagService.update(form); return Result.ok(); }
+
+    @DeleteMapping("/tags/{id}")
+    @SaCheckPermission("content:tag:remove")
+    @OperLog(title = "标签管理", businessType = LogBusinessType.DELETE)
+    public Result<Void> deleteTag(@PathVariable Long id) { tagService.delete(id); return Result.ok(); }
+
+    @PutMapping("/articles/{id}/recycle")
+    @SaCheckPermission("content:article:remove")
+    @OperLog(title = "文章回收", businessType = LogBusinessType.UPDATE)
+    public Result<Void> recycle(@PathVariable Long id) { articleService.recycle(id); return Result.ok(); }
+
+    @PutMapping("/articles/{id}/restore")
+    @SaCheckPermission("content:article:restore")
+    @OperLog(title = "文章恢复", businessType = LogBusinessType.UPDATE)
+    public Result<Void> restore(@PathVariable Long id) { articleService.restore(id); return Result.ok(); }
+
 
     // ==================== 文章 ====================
 

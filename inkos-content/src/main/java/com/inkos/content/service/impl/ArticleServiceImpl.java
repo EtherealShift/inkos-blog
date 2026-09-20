@@ -2,8 +2,10 @@ package com.inkos.content.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.inkos.common.core.constant.CacheConstants;
 import com.inkos.common.core.domain.PageResult;
 import com.inkos.common.core.enums.ArticleStatus;
 import com.inkos.common.core.enums.ResultCode;
@@ -11,6 +13,7 @@ import com.inkos.common.exception.BusinessException;
 import com.inkos.common.metrics.InkosMetrics;
 import com.inkos.common.util.StrUtils;
 import com.inkos.common.util.TextUtils;
+import com.inkos.content.cache.ContentCache;
 import com.inkos.content.dto.ArticleForm;
 import com.inkos.content.dto.ArticleQuery;
 import com.inkos.content.entity.Article;
@@ -22,6 +25,7 @@ import com.inkos.content.mapper.ArticleTagMapper;
 import com.inkos.content.mapper.CategoryMapper;
 import com.inkos.content.mapper.TagMapper;
 import com.inkos.content.port.AuthorNameResolver;
+import com.inkos.content.port.CurrentUserProvider;
 import com.inkos.content.service.ArticleService;
 import com.inkos.content.vo.ArticleListVO;
 import com.inkos.content.vo.ArticleVO;
@@ -53,7 +57,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> implements ArticleService {
 
-    /** 当前登录作者的临时兜底值。framework 模块接入 Sa-Token 后应从上下文获取。 */
+    /**
+     * 作者兜底值：取不到当前登录用户时使用。
+     *
+     * <p>只应出现在真实请求之外 —— 种子数据初始化、定时任务、消息消费等没有登录态的地方。
+     * 正常请求一律走 {@link CurrentUserProvider}，不再无条件把文章挂在 1 号用户名下。
+     */
     public static final Long DEFAULT_AUTHOR_ID = 1L;
 
     /** 批量查询 IN 子句的分片大小，避免超出数据库参数上限 */
@@ -65,19 +74,22 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     /** 相关文章默认条数上限 */
     private static final int RELATED_LIMIT = 5;
 
+    /** 相关文章条数硬上限：limit 来自外部入参，必须收敛，否则一次请求就能拉走整张表 */
+    private static final int MAX_RELATED_LIMIT = 20;
+
     /**
      * 排序字段白名单：外部传入的 orderBy 只能命中这里，
-     * 未命中一律退回默认排序，杜绝 SQL 注入。
+     * 未命中一律退回默认排序。
+     *
+     * <p>映射到 {@link SFunction} 而不是列名字符串：列名一旦拼进 SQL 就再也拿不到
+     * 编译期检查（改字段名 → 静默失效直到线上报错），而 lambda 由 MyBatis-Plus
+     * 反解成真实列名，改名会直接编译失败。
      */
-    private static final Map<String, String> ORDER_WHITELIST = Map.of(
-            "publishedat", "published_at",
-            "viewcount", "view_count",
-            "updatetime", "update_time"
+    private static final Map<String, SFunction<Article, ?>> ORDER_WHITELIST = Map.of(
+            "publishedat", Article::getPublishedAt,
+            "viewcount", Article::getViewCount,
+            "updatetime", Article::getUpdateTime
     );
-
-    private static final String COLUMN_PUBLISHED_AT = "published_at";
-    private static final String COLUMN_VIEW_COUNT = "view_count";
-    private static final String COLUMN_UPDATE_TIME = "update_time";
 
     private final ArticleTagMapper articleTagMapper;
     private final TagMapper tagMapper;
@@ -91,6 +103,17 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
      * 而不是让整个内容模块启动失败。
      */
     private final ObjectProvider<AuthorNameResolver> authorNameResolverProvider;
+
+    /**
+     * 当前用户端口，同样用 {@link ObjectProvider}：没有适配器（content 模块单独运行）
+     * 或不在请求线程里（种子数据初始化）时拿不到，回落到 {@link #DEFAULT_AUTHOR_ID}，
+     * 而不是让文章创建直接失败。
+     */
+    private final ObjectProvider<CurrentUserProvider> currentUserProvider;
+
+    /** 内容域缓存策略。没有缓存后端时内部自动退化为空实现，这里无需判空 */
+    private final ContentCache contentCache;
+
     private final InkosMetrics metrics;
 
     // ==================== 查询 ====================
@@ -98,12 +121,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     @Override
     public PageResult<ArticleListVO> pagePublic(ArticleQuery query) {
         // 前台强制只看已发布，忽略外部传入的 status，避免越权读到草稿
-        return pageByQuery(query, ArticleStatus.PUBLISHED.getCode());
+        int status = ArticleStatus.PUBLISHED.getCode();
+        if (StrUtils.isNotBlank(query.getKeyword())) {
+            // 检索不进缓存：关键字的取值空间无界，缓存它等于把 Redis 的写权限交给调用方
+            return pageByQuery(query, status, true);
+        }
+        return contentCache.getOrLoad(contentCache.articleListKey(query), CacheConstants.ARTICLE_LIST_TTL,
+                () -> pageByQuery(query, status, true));
     }
 
     @Override
     public PageResult<ArticleListVO> pageAdmin(ArticleQuery query) {
-        return pageByQuery(query, query.getStatus());
+        CurrentUserProvider user = currentUserProvider.getIfAvailable();
+        if (user != null && user.currentUserIdOrNull() != null && !user.canManageAllArticles()) query.setAuthorId(user.currentUserIdOrNull());
+        return pageByQuery(query, query.getStatus(), false);
     }
 
     /**
@@ -112,9 +143,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
      * @param query         查询条件
      * @param statusOverride 非空时强制使用该状态，覆盖入参
      */
-    private PageResult<ArticleListVO> pageByQuery(ArticleQuery query, Integer statusOverride) {
+    private PageResult<ArticleListVO> pageByQuery(ArticleQuery query, Integer statusOverride, boolean publicOnly) {
         Page<Article> page = new Page<>(query.safePageNum(), query.safePageSize());
-        baseMapper.selectPage(page, buildWrapper(query, statusOverride));
+        baseMapper.selectPage(page, buildWrapper(query, statusOverride).eq(publicOnly, Article::getVisibility, 0));
         List<ArticleListVO> records = toListVos(page.getRecords());
         return PageResult.of(records, page.getTotal(), page.getCurrent(), page.getSize());
     }
@@ -125,7 +156,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         // 调用方无需（也不应）自己设置
         query.setSearchInContent(Boolean.TRUE);
         Page<Article> page = new Page<>(query.safePageNum(), query.safePageSize());
-        baseMapper.selectPage(page, buildWrapper(query, ArticleStatus.PUBLISHED.getCode()));
+        baseMapper.selectPage(page, buildWrapper(query, ArticleStatus.PUBLISHED.getCode()).eq(Article::getVisibility, 0));
 
         List<ArticleListVO> vos = toListVos(page.getRecords());
         // 按 id 关联而不是按下标：toListVos 万一过滤了记录，下标就会错位
@@ -145,7 +176,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         }
         List<Article> articles = list(new LambdaQueryWrapper<Article>()
                 .in(Article::getId, ids)
-                .eq(Article::getStatus, ArticleStatus.PUBLISHED.getCode()));
+                .eq(Article::getStatus, ArticleStatus.PUBLISHED.getCode())
+                .eq(Article::getVisibility, 0));
         if (articles.isEmpty()) {
             return List.of();
         }
@@ -158,45 +190,103 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
 
     @Override
     public ArticleVO getBySlug(String slug) {
+        return getBySlug(slug, null);
+    }
+
+    @Override
+    public ArticleVO getBySlug(String slug, String viewerKey) {
         if (StrUtils.isBlank(slug)) {
             throw BusinessException.of(ResultCode.ARTICLE_NOT_FOUND);
         }
+        // 详情走缓存：一次详情渲染原本要 5~6 次查询（正文 + 分类 + 标签 + 作者 + 浏览自增）
+        ArticleVO vo = contentCache.getOrLoad(contentCache.articleDetailKey(slug),
+                CacheConstants.ARTICLE_DETAIL_TTL, () -> toVo(requirePublishedBySlug(slug)));
+
+        // 计数放在缓存之外：命中缓存时同样要计浏览量，只是按访客去重
+        recordView(vo.id(), viewerKey);
+        return vo;
+    }
+
+    /** 按 slug 取已发布文章，取不到抛业务异常。详情缓存的 loader 就是它 */
+    private Article requirePublishedBySlug(String slug) {
         Article article = getOne(new LambdaQueryWrapper<Article>()
                 .eq(Article::getSlug, slug)
                 .eq(Article::getStatus, ArticleStatus.PUBLISHED.getCode())
+                .eq(Article::getVisibility, 0)
                 .last("LIMIT 1"));
         if (article == null) {
             throw BusinessException.of(ResultCode.ARTICLE_NOT_FOUND);
         }
+        return article;
+    }
 
-        // 先取详情再计数：即使自增失败也不应影响正文返回
-        ArticleVO vo = toVo(article);
-        baseMapper.incrementViewCount(article.getId());
+    /**
+     * 记录一次浏览。
+     *
+     * <p>去重是刻意的。详情走缓存之后，计数器如果还是「每个请求 +1」，
+     * 就变成「读压力降到数据库之外，写压力却原样打在数据库上」——
+     * 一次 F5 就是一次 UPDATE。同一访客在窗口内重复打开只计一次。
+     */
+    private void recordView(Long articleId, String viewerKey) {
+        if (!contentCache.shouldCountView(articleId, viewerKey)) {
+            return;
+        }
+        baseMapper.incrementViewCount(articleId);
         metrics.count(InkosMetrics.ARTICLE_VIEW);
-        return vo;
     }
 
     @Override
     public ArticleVO getByIdForEdit(Long id) {
-        return toVo(getArticleOrThrow(id));
+        Article article = getArticleOrThrow(id);
+        checkOwner(article);
+        return toVo(article);
     }
 
     @Override
     public List<ArticleListVO> listRelated(Long articleId, int limit) {
+        int size = limit <= 0 ? RELATED_LIMIT : Math.min(limit, MAX_RELATED_LIMIT);
+        return contentCache.getOrLoad(contentCache.relatedArticleKey(articleId, size),
+                CacheConstants.ARTICLE_LIST_TTL, () -> loadRelated(articleId, size));
+    }
+
+    @Override
+    public int warmDetailCache(List<Long> articleIds) {
+        if (articleIds == null || articleIds.isEmpty()) {
+            return 0;
+        }
+        List<Article> articles = listByIds(articleIds).stream()
+                .filter(article -> ArticleStatus.PUBLISHED == ArticleStatus.of(article.getStatus()) && Integer.valueOf(0).equals(article.getVisibility()))
+                .toList();
+        if (articles.isEmpty()) {
+            return 0;
+        }
+
+        List<ArticleVO> vos = toDetailVos(articles);
+        for (ArticleVO vo : vos) {
+            contentCache.put(contentCache.articleDetailKey(vo.slug()), vo, CacheConstants.ARTICLE_DETAIL_TTL);
+        }
+        return vos.size();
+    }
+
+    private List<ArticleListVO> loadRelated(Long articleId, int size) {
         Article current = getArticleOrThrow(articleId);
-        int size = limit <= 0 ? RELATED_LIMIT : limit;
+        if (!Integer.valueOf(2).equals(current.getStatus()) || !Integer.valueOf(0).equals(current.getVisibility())) throw BusinessException.of(ResultCode.ARTICLE_NOT_FOUND);
         if (current.getCategoryId() == null) {
             return Collections.emptyList();
         }
 
-        // 同分类下除自己以外的已发布文章
-        List<Article> articles = list(new LambdaQueryWrapper<Article>()
+        // 同分类下除自己以外的已发布文章。
+        // 用 searchCount = false 的分页代替 last("LIMIT " + size)：既不会多一次 count 查询，
+        // 也不必把数字拼进 SQL。id 兜底排序保证同一发布时间下顺序稳定。
+        Page<Article> page = new Page<>(1, size, false);
+        baseMapper.selectPage(page, new LambdaQueryWrapper<Article>()
                 .eq(Article::getCategoryId, current.getCategoryId())
                 .eq(Article::getStatus, ArticleStatus.PUBLISHED.getCode())
+                .eq(Article::getVisibility, 0)
                 .ne(Article::getId, current.getId())
                 .orderByDesc(Article::getPublishedAt)
-                .last("LIMIT " + size));
-        return toListVos(articles);
+                .orderByDesc(Article::getId));
+        return toListVos(page.getRecords());
     }
 
     // ==================== 写入 ====================
@@ -205,7 +295,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     @Transactional(rollbackFor = Exception.class)
     public Long create(ArticleForm form) {
         Article article = new Article();
-        article.setAuthorId(DEFAULT_AUTHOR_ID);
+        article.setAuthorId(resolveAuthorId());
         article.setTitle(StrUtils.trim(form.title()));
         article.setSlug(resolveUniqueSlug(form.slug(), form.title(), null));
         article.setCategoryId(resolveCategoryId(form.categoryId()));
@@ -223,7 +313,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         article.setCommentCount(0);
         save(article);
 
-        replaceArticleTags(article.getId(), Collections.emptyList(), resolveTagIds(form.tagIds()));
+        // 草稿不进前台列表，因此不必作废列表缓存；但标签的 article_count 是冗余列、
+        // 已经被改动，标签云必须失效
+        if (replaceArticleTags(article.getId(), Collections.emptyList(), resolveTagIds(form.tagIds()))) {
+            contentCache.evictTagCloud();
+        }
         return article.getId();
     }
 
@@ -231,6 +325,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
     @Transactional(rollbackFor = Exception.class)
     public void update(ArticleForm form) {
         Article existing = getArticleOrThrow(form.id());
+        checkOwner(existing);
         if (!isEditable(existing.getStatus())) {
             throw BusinessException.of(ResultCode.ARTICLE_NOT_EDITABLE);
         }
@@ -238,7 +333,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         Article update = new Article();
         update.setId(existing.getId());
         update.setTitle(StrUtils.trim(form.title()));
-        update.setSlug(resolveUniqueSlug(form.slug(), form.title(), existing.getId()));
+        String newSlug = resolveUniqueSlug(form.slug(), form.title(), existing.getId());
+        update.setSlug(newSlug);
         update.setCategoryId(resolveCategoryId(form.categoryId()));
         update.setCoverUrl(StrUtils.trim(form.coverUrl()));
         update.setContentMd(form.contentMd());
@@ -247,41 +343,76 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         update.setVisibility(form.visibility() == null ? existing.getVisibility() : form.visibility());
         update.setWordCount(TextUtils.wordCount(form.contentMd()));
         update.setReadingMinutes(TextUtils.readingMinutes(form.contentMd()));
-        updateById(update);
+        update(update, new LambdaUpdateWrapper<Article>().eq(Article::getId, existing.getId()).set(Article::getCategoryId, update.getCategoryId()));
 
         // 关联表是物理表，先算差集再增删，避免全量重写的无谓写入
         List<Long> oldTagIds = selectTagIds(List.of(existing.getId()));
         List<Long> newTagIds = resolveTagIds(form.tagIds());
-        replaceArticleTags(existing.getId(), oldTagIds, newTagIds);
+        boolean tagsChanged = replaceArticleTags(existing.getId(), oldTagIds, newTagIds);
+
+        // 标题 / 摘要 / 正文 / 分类都会改变列表内容
+        contentCache.invalidateArticleLists();
+        contentCache.evictCategoryTree(); contentCache.evictTagCloud();
+        // 改 slug 会让旧 URL 的详情缓存永远拿不到新数据，新旧两个 key 都要删
+        contentCache.evictArticleDetail(existing.getSlug());
+        contentCache.evictArticleDetail(newSlug);
+        if (tagsChanged) {
+            contentCache.evictTagCloud();
+        }
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void publish(Long id) {
         Article existing = getArticleOrThrow(id);
+        checkOwner(existing);
 
         // 草稿、待审、已下线都能发布，只有回收站例外
         if (ArticleStatus.RECYCLED == ArticleStatus.of(existing.getStatus())) {
             throw BusinessException.of(ResultCode.ARTICLE_NOT_EDITABLE);
         }
-        update(new LambdaUpdateWrapper<Article>()
-                .set(Article::getStatus, ArticleStatus.PUBLISHED.getCode())
-                .set(Article::getPublishedAt, LocalDateTime.now())
-                .eq(Article::getId, id));
+
+        // 传「实体 + 条件」而不是只给 UpdateWrapper：审计字段自动填充
+        // （update_time / update_by）只在有实体时触发，纯 wrapper 会让更新时间停在旧值
+        LocalDateTime now = LocalDateTime.now();
+        Article update = new Article();
+        update.setStatus(ArticleStatus.PUBLISHED.getCode());
+        update.setPublishedAt(now);
+        update(update, new LambdaUpdateWrapper<Article>().eq(Article::getId, id));
+
+        contentCache.invalidateArticleLists();
+        contentCache.evictCategoryTree(); contentCache.evictTagCloud();
+        // 曾上线过的文章详情缓存里可能留着旧状态，且发布时间变了
+        contentCache.evictArticleDetail(existing.getSlug());
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void offline(Long id) {
-        getArticleOrThrow(id);
-        update(new LambdaUpdateWrapper<Article>()
-                .set(Article::getStatus, ArticleStatus.OFFLINE.getCode())
-                .eq(Article::getId, id));
+        Article existing = getArticleOrThrow(id);
+        checkOwner(existing);
+
+        Article update = new Article();
+        if (!Integer.valueOf(2).equals(existing.getStatus())) throw BusinessException.of(ResultCode.CONFLICT, "只有已发布文章可以下线");
+        update.setStatus(ArticleStatus.OFFLINE.getCode());
+        update(update, new LambdaUpdateWrapper<Article>().eq(Article::getId, id));
+
+        contentCache.invalidateArticleLists();
+        contentCache.evictCategoryTree(); contentCache.evictTagCloud();
+        contentCache.evictArticleDetail(existing.getSlug());
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
-        getArticleOrThrow(id);
+        Article existing = getArticleOrThrow(id);
+        checkOwner(existing);
         // @TableLogic 会把物理删除改写成 deleted = 1
         removeById(id);
+
+        contentCache.invalidateArticleLists();
+        contentCache.evictCategoryTree(); contentCache.evictTagCloud();
+        contentCache.evictArticleDetail(existing.getSlug());
     }
 
     // ==================== 内部工具 ====================
@@ -344,19 +475,52 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         return wrapper;
     }
 
-    /** 排序白名单映射：未命中或为空时按发布时间倒序 */
+    /**
+     * 排序：白名单映射到 lambda 列，未命中或为空时按发布时间倒序。
+     *
+     * <p>两个细节：
+     * <ul>
+     *   <li>一律再追加 {@code id} 作为最后一级排序。只按 {@code published_at} 排序时，
+     *       同一时间发布的多篇文章之间的相对顺序由数据库自行决定，
+     *       <b>翻页会出现重复或漏行</b>；补一个唯一列才让分页稳定。</li>
+     *   <li>不再用 {@code last("ORDER BY " + column)}：那是把列名拼成 SQL 字符串，
+     *       绕过了 MyBatis-Plus 的列名解析，改字段名不会有任何编译期提示。</li>
+     * </ul>
+     */
     private void applyOrder(LambdaQueryWrapper<Article> wrapper, String orderBy, boolean asc) {
-        if (StrUtils.isBlank(orderBy)) {
-            wrapper.orderByDesc(Article::getPublishedAt).orderByDesc(Article::getId);
-            return;
-        }
-        String column = ORDER_WHITELIST.get(orderBy.trim().toLowerCase());
+        SFunction<Article, ?> column = StrUtils.isBlank(orderBy)
+                ? null
+                : ORDER_WHITELIST.get(orderBy.trim().toLowerCase());
         if (column == null) {
             wrapper.orderByDesc(Article::getPublishedAt).orderByDesc(Article::getId);
             return;
         }
-        // column 来自白名单常量，不含用户输入
-        wrapper.last("ORDER BY " + column + (asc ? " ASC" : " DESC"));
+        wrapper.orderBy(true, asc, column).orderByDesc(Article::getId);
+    }
+
+    private void checkOwner(Article article) {
+        CurrentUserProvider user = currentUserProvider.getIfAvailable();
+        if (user != null && user.currentUserIdOrNull() != null && !user.canManageAllArticles()
+                && !Objects.equals(user.currentUserIdOrNull(), article.getAuthorId()))
+            throw BusinessException.of(ResultCode.FORBIDDEN, "只能管理自己的文章");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void recycle(Long id) { changeRecycled(id, false); }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void restore(Long id) { changeRecycled(id, true); }
+
+    private void changeRecycled(Long id, boolean restore) {
+        Article article = getArticleOrThrow(id);
+        checkOwner(article);
+        if (restore && !Integer.valueOf(4).equals(article.getStatus())) throw BusinessException.of(ResultCode.CONFLICT, "只有回收站文章可以恢复");
+        Article update = new Article(); update.setId(id); update.setStatus(restore ? 0 : 4);
+        updateById(update);
+        contentCache.invalidateArticleLists();
+        contentCache.evictCategoryTree(); contentCache.evictTagCloud(); contentCache.evictArticleDetail(article.getSlug());
     }
 
     /** 取文章，不存在直接抛业务异常 */
@@ -369,6 +533,17 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
             throw BusinessException.of(ResultCode.ARTICLE_NOT_FOUND);
         }
         return article;
+    }
+
+    /**
+     * 解析文章作者：优先当前登录用户，取不到才兜底。
+     *
+     * <p>端口缺失（content 单独运行）或不在请求线程（种子数据）时都会走到兜底分支。
+     */
+    private Long resolveAuthorId() {
+        CurrentUserProvider provider = currentUserProvider.getIfAvailable();
+        Long userId = provider == null ? null : provider.currentUserIdOrNull();
+        return userId == null ? DEFAULT_AUTHOR_ID : userId;
     }
 
     /** 是否允许编辑：仅回收站不可编辑 */
@@ -447,15 +622,21 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         return distinct;
     }
 
-    /** 按差集同步文章标签关联，并维护标签的文章计数 */
-    private void replaceArticleTags(Long articleId, List<Long> oldTagIds, List<Long> newTagIds) {
+    /**
+     * 按差集同步文章标签关联，并维护标签的文章计数。
+     *
+     * @return 关联是否真的发生了变化。调用方据此决定要不要作废标签云缓存 ——
+     *         没有变化时多失效一次只是让缓存白建，但会让「编辑文章」这类高频操作
+     *         每次都把 30 分钟的字典缓存清掉
+     */
+    private boolean replaceArticleTags(Long articleId, List<Long> oldTagIds, List<Long> newTagIds) {
         Set<Long> oldSet = new LinkedHashSet<>(oldTagIds == null ? List.of() : oldTagIds);
         Set<Long> newSet = new LinkedHashSet<>(newTagIds == null ? List.of() : newTagIds);
 
         List<Long> toRemove = oldSet.stream().filter(id -> !newSet.contains(id)).toList();
         List<Long> toAdd = newSet.stream().filter(id -> !oldSet.contains(id)).toList();
         if (toRemove.isEmpty() && toAdd.isEmpty()) {
-            return;
+            return false;
         }
 
         if (!toRemove.isEmpty()) {
@@ -474,14 +655,21 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
         // 计数是冗余统计，允许并发下轻微偏差，故不做行锁
         toRemove.forEach(tagId -> adjustTagArticleCount(tagId, -1));
         toAdd.forEach(tagId -> adjustTagArticleCount(tagId, 1));
+        return true;
     }
 
-    /** 在 SQL 侧增减标签文章数，避免读改写竞态 */
+    /**
+     * 在 SQL 侧增减标签文章数，避免读改写竞态。
+     *
+     * <p>增量用 {@code {0}} 占位符绑定成 PreparedStatement 参数，而不是拼进 SQL 文本：
+     * 参数化后同一条语句可以被复用（MySQL 侧少一次解析），也免去了「这里拼的是 int、
+     * 但下次有人改成 String」的隐患。
+     */
     private void adjustTagArticleCount(Long tagId, int delta) {
         tagMapper.update(null, new LambdaUpdateWrapper<Tag>()
                 .setSql(delta > 0
-                        ? "article_count = article_count + 1"
-                        : "article_count = GREATEST(article_count - 1, 0)")
+                        ? "article_count = article_count + {0}"
+                        : "article_count = GREATEST(article_count - {0}, 0)", Math.abs(delta))
                 .eq(Tag::getId, tagId));
     }
 
@@ -574,14 +762,40 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
                     article.getLikeCount(),
                     article.getCommentCount(),
                     article.getReadingMinutes(),
-                    article.getPublishedAt()));
+                    article.getPublishedAt(),
+                    article.getStatus(),
+                    article.getUpdateTime(), article.getVisibility()));
         }
         return vos;
     }
 
+    /**
+     * 批量转详情 VO。
+     *
+     * <p>预热要把 N 篇文章的详情一次性写进缓存。逐篇调 {@link #toVo} 会让分类 / 标签 /
+     * 作者各查 N 次（N 篇 × 4 次查询）；这里先走一遍已经批量化了的 {@link #toListVos}，
+     * 再在内存里补齐详情字段，总查询数从 4N 降到 4。
+     */
+    private List<ArticleVO> toDetailVos(List<Article> articles) {
+        if (articles == null || articles.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // toListVos 按入参顺序遍历，因此下标可以安全对齐
+        List<ArticleListVO> listVos = toListVos(articles);
+        List<ArticleVO> detailVos = new ArrayList<>(articles.size());
+        Map<Long, List<Long>> tagIds = selectArticleTagMap(articles.stream().map(Article::getId).toList());
+        for (int index = 0; index < articles.size(); index++) {
+            detailVos.add(toDetailVo(articles.get(index), listVos.get(index), tagIds.getOrDefault(articles.get(index).getId(), List.of())));
+        }
+        return detailVos;
+    }
+
     /** 单篇转详情 VO，复用批量逻辑保证字段口径一致 */
     private ArticleVO toVo(Article article) {
-        ArticleListVO list = toListVos(List.of(article)).get(0);
+        return toDetailVo(article, toListVos(List.of(article)).get(0), selectTagIds(List.of(article.getId())));
+    }
+
+    private ArticleVO toDetailVo(Article article, ArticleListVO list, List<Long> tagIds) {
         return new ArticleVO(
                 list.id(),
                 list.title(),
@@ -604,6 +818,6 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, Article> impl
                 article.getVisibility(),
                 article.getQualityScore(),
                 article.getCreateTime(),
-                article.getUpdateTime());
+                article.getUpdateTime(), tagIds);
     }
 }

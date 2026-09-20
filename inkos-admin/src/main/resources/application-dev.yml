@@ -3,8 +3,8 @@
 #
 #   * 建表：启动时执行 db/schema.sql（CREATE TABLE IF NOT EXISTS，可反复执行）。
 #   * 种子数据：首次启动灌入（已有 admin 用户时自动跳过），见 DevDataInitializer。
-#   * 开发库的表结构改动，直接改 schema.sql 后重建库即可：
-#       DROP DATABASE inkos; CREATE DATABASE inkos DEFAULT CHARACTER SET utf8mb4;
+#   * 首屏主题字段：启动时执行幂等 hero-copy-upgrade.sql，保留已有内容。
+#   * 已有库使用增量升级脚本；不需要重建数据库。
 #
 #   连接信息在 application.yml 里统一配置，默认 127.0.0.1:3306/inkos、用户 root。
 #   口令请放 application-local.yml（已 gitignore），或通过环境变量传入：
@@ -14,9 +14,13 @@ spring:
   sql:
     init:
       mode: always
-      schema-locations: classpath:db/schema.sql
+      schema-locations: classpath:db/schema.sql,classpath:db/hero-copy-upgrade.sql
       encoding: UTF-8
       continue-on-error: false
+
+inkos:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4173,http://127.0.0.1:4173,http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173}
 
 management:
   endpoint:

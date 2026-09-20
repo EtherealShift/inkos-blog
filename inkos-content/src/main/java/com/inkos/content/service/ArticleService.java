@@ -35,12 +35,28 @@ public interface ArticleService {
     PageResult<ArticleListVO> pageAdmin(ArticleQuery query);
 
     /**
-     * 按 slug 获取已发布文章详情，并累加浏览量。
+     * 按 slug 获取已发布文章详情，并累加浏览量（不去重）。
+     *
+     * <p>供后台或非 Web 调用使用；前台请用
+     * {@link #getBySlug(String, String)}，它带访客去重。
      *
      * @param slug URL 标识
      * @return 文章详情
      */
     ArticleVO getBySlug(String slug);
+
+    /**
+     * 按 slug 获取已发布文章详情，并累加浏览量。
+     *
+     * <p>带访客维度的阅读去重：同一 {@code viewerKey} 在窗口内重复访问只计一次，
+     * 避免「详情走缓存之后，读压力下降但写压力原样保留」。
+     *
+     * @param slug      URL 标识
+     * @param viewerKey 访客标识（登录用户用 {@code u:id}，游客用 {@code ip:...}）；
+     *                  传 {@code null} 表示不做去重，退化成每次都计数
+     * @return 文章详情
+     */
+    ArticleVO getBySlug(String slug, String viewerKey);
 
     /**
      * 后台编辑态读取，不限状态（回收站文章仍可查看，但不可编辑）。
@@ -85,6 +101,8 @@ public interface ArticleService {
      * @param id 文章 id
      */
     void delete(Long id);
+    void recycle(Long id);
+    void restore(Long id);
 
     /**
      * 相关文章：同分类下的其它已发布文章。
@@ -116,4 +134,15 @@ public interface ArticleService {
      * @return 已发布文章的列表视图，顺序与入参一致；不存在或未发布的会被跳过
      */
     List<ArticleListVO> listPublishedByIds(Collection<Long> ids);
+
+    /**
+     * 预热文章详情缓存。
+     *
+     * <p>刻意不复用 {@link #getBySlug(String)}：那会顺带累加浏览量，
+     * 把「机器替将来的读者把内容准备好」记成读者的一次阅读是错的。
+     *
+     * @param articleIds 待预热的文章 id，非已发布状态会被跳过
+     * @return 实际写入缓存的篇数
+     */
+    int warmDetailCache(List<Long> articleIds);
 }

@@ -54,6 +54,7 @@ public record ArticleVO(
         Integer visibility,
         Integer qualityScore,
         LocalDateTime createTime,
-        LocalDateTime updateTime
+        LocalDateTime updateTime,
+        List<Long> tagIds
 ) {
 }

@@ -11,11 +11,11 @@ package com.inkos.common.core.validate;
 public interface ValidGroup {
 
     /** 新增场景 */
-    interface Create {
+    interface Create extends jakarta.validation.groups.Default {
     }
 
     /** 修改场景 */
-    interface Update {
+    interface Update extends jakarta.validation.groups.Default {
     }
 
     /** 查询场景 */

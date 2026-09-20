@@ -4,8 +4,6 @@ import com.inkos.content.dto.ArticleForm;
 import com.inkos.content.dto.CategoryForm;
 import com.inkos.content.service.ArticleService;
 import com.inkos.content.service.CategoryService;
-import com.inkos.content.entity.Quote;
-import com.inkos.content.mapper.QuoteMapper;
 import com.inkos.content.service.TagService;
 import com.inkos.system.dto.SysUserForm;
 import com.inkos.system.entity.SysMenu;
@@ -51,7 +49,6 @@ public class DevDataInitializer implements ApplicationRunner {
     private final CategoryService categoryService;
     private final TagService tagService;
     private final ArticleService articleService;
-    private final QuoteMapper quoteMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -78,7 +75,7 @@ public class DevDataInitializer implements ApplicationRunner {
                 List.of(authorRole.getId()));
 
         seedContent();
-        seedQuotes();
+        // Default quotes are independently initialized in every environment.
 
         log.info("种子数据初始化完成：admin/{}  author/{}  userId={}",
                 DEFAULT_PASSWORD_ADMIN, DEFAULT_PASSWORD_AUTHOR, adminId);
@@ -136,7 +133,7 @@ public class DevDataInitializer implements ApplicationRunner {
         all.add(articlePage);
         authorMenus.add(articlePage);
         List<SysMenu> articleButtons = buttons(articlePage.getId(), "文章管理", "content:article",
-                List.of("query:查询", "add:新增", "edit:修改", "remove:删除", "publish:发布"));
+                List.of("query:查询", "add:新增", "edit:修改", "remove:删除", "publish:发布", "restore:恢复"));
         all.addAll(articleButtons);
         authorMenus.addAll(articleButtons);
 
@@ -158,6 +155,10 @@ public class DevDataInitializer implements ApplicationRunner {
         all.addAll(quoteButtons);
         authorMenus.addAll(quoteButtons);
 
+        SysMenu tagPage = page(content.getId(), "标签管理", "tag", "content/tag/index", "content:tag:list", 4);
+        all.add(tagPage); authorMenus.add(tagPage);
+        List<SysMenu> tagButtons = buttons(tagPage.getId(), "标签管理", "content:tag", List.of("add:新增", "edit:修改", "remove:删除"));
+        all.addAll(tagButtons); authorMenus.addAll(tagButtons);
         return all;
     }
 
@@ -378,22 +379,4 @@ public class DevDataInitializer implements ApplicationRunner {
         return categoryService.create(new CategoryForm(null, parentId, name, slug, description, sort, 1));
     }
 
-    private void seedQuotes() {
-        List<String[]> quotes = List.of(
-                new String[]{"把时间折进一页纸。", "砚知"},
-                new String[]{"读得慢一点，世界会显出更多纹理。", "砚知"},
-                new String[]{"写下所知，也为未知留白。", "砚知"},
-                new String[]{"思想落在纸上，才开始拥有方向。", "砚知"},
-                new String[]{"愿每一次阅读，都抵达更深处。", "砚知"}
-        );
-        for (int index = 0; index < quotes.size(); index++) {
-            Quote quote = new Quote();
-            quote.setContent(quotes.get(index)[0]);
-            quote.setAttribution(quotes.get(index)[1]);
-            quote.setSortOrder(index + 1);
-            quote.setStatus(1);
-            quoteMapper.insert(quote);
-        }
-        log.info("已写入 {} 条首页语句", quotes.size());
-    }
 }

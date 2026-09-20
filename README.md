@@ -298,13 +298,13 @@ inkos-blog/
 | JSON | **Jackson 3** | `tools.jackson`（Boot 4 默认，已从 `com.fasterxml.jackson` 迁移） |
 | 密码加密 | spring-security-crypto（仅 BCrypt） | 随 Boot 管理 |
 | 数据库 | **MySQL** | 8.0+ / InnoDB / utf8mb4（全部 profile 统一） |
-| 缓存 | **Redis** | 连接与序列化见 `RedisConfig`；本机验证于 Redis 8.10.2（Lettuce 协商到 RESP3） |
+| 缓存 | **Redis** | 抽象 `CacheService`、实现 `RedisCacheService`、内容域策略 `ContentCache`；本机验证于 Redis 8.10.2（Lettuce 协商到 RESP3） |
 | 驱动 | mysql-connector-j | 随 Boot 管理 |
 | API 文档 | springdoc-openapi | 3.1.1（v3 线对应 Boot 4） |
 | 可观测性 | Micrometer + Actuator | 随 Boot 管理，暴露 Prometheus 端点 |
 | 代码简化 | Lombok | 1.18.48 |
 
-**刻意没引入的东西**（骨架阶段保持轻量）：Spring Security 过滤器链、Redis、Elasticsearch、
+**刻意没引入的东西**（骨架阶段保持轻量）：Spring Security 过滤器链、Elasticsearch、
 消息队列。理由与接入时机见文末「已知技术债」。
 
 ---
@@ -317,7 +317,7 @@ inkos-blog/
 |---|---|---|
 | GET | `/api/v1/public/ping` | 探活 |
 | GET | `/api/v1/public/articles` | 文章分页（仅已发布） |
-| GET | `/api/v1/public/articles/{slug}` | 文章详情（累加浏览量） |
+| GET | `/api/v1/public/articles/{slug}` | 文章详情（累加浏览量，同一访客在窗口内去重） |
 | GET | `/api/v1/public/articles/{id}/related` | 相关文章 |
 | GET | `/api/v1/public/search` | 检索（标题/摘要/正文，附命中片段） |
 | GET | `/api/v1/public/categories` | 分类树 |
@@ -479,6 +479,85 @@ management:
 | `new ArrayList<>(...)` | ✅ 容器与元素类型都保留 |
 | `List.of(...)` / `Map.of(...)` 作为**顶层值** | ❌ **读不回来** —— 改用 `ArrayList` 或用 POJO 包一层 |
 
+### 缓存：抽象、策略与失效
+
+缓存分三层放置，每层只解决一件事：
+
+| 位置 | 角色 | 职责 |
+|---|---|---|
+| `inkos-common` | `CacheService` | **抽象**：读 / 写 / 精确删除 / 一次性占坑 / 计数器，并声明「任何方法都不许把缓存故障抛给调用方」 |
+| `inkos-framework` | `RedisCacheService` | **实现**：JSON 读写、故障熔断、TTL 抖动、不可变集合归一化 |
+| `inkos-content` | `ContentCache` | **策略**：内容域缓存了哪些 key、TTL 多长、什么操作让它失效 |
+
+抽象之所以放在 `common`：`content` / `system` 需要缓存，但**不能**依赖 `framework`
+（依赖方向只允许 `admin → framework → system → common` 与 `admin → content → common`）。
+拿不到实现时自动退化为 `NoOpCacheService`，所有读写变成「未命中 + 直连数据库」，
+因此 `content` 依旧可独立编译、独立测试 —— 与 `AuthorNameResolver` 端口是同一套思路。
+
+**缓存了什么**
+
+| key | 内容 | TTL |
+|---|---|---|
+| `inkos:category:tree` | 分类树 | 30 min |
+| `inkos:tag:cloud` | 标签云 | 30 min |
+| `inkos:quote:list:{ver}:{limit}` | 首页语句 | 30 min |
+| `inkos:article:list:{ver}:{条件指纹}` | 文章列表（仅前台、无关键字） | 5 min |
+| `inkos:article:related:{ver}:{id}:{limit}` | 相关文章 | 5 min |
+| `inkos:article:detail:{slug}` | 文章详情 | 5 min |
+| `inkos:view:dedup:{articleId}:{访客}` | 阅读去重占坑 | 6 h |
+
+按 slug 的详情缓存正是最划算的一处：一次详情渲染原本要 5~6 次查询
+（正文 + 分类 + 标签 + 作者 + 浏览自增），现在命中缓存时是 0 次读库。
+
+**刻意不缓存**的两处：关键字检索（关键字取值空间无界，缓存它等于把 Redis 的写权限
+交给调用方）与后台列表（后台要立刻看到自己的改动）。
+
+**失效只有三种形态**，一律不做前缀/模式删除（`KEYS` 会阻塞 Redis，
+`SCAN` 在大 key 空间下代价不可控）：
+
+1. **精确删除** —— 分类树、标签云、文章详情：key 是确定的；
+2. **版本号整体作废** —— 列表、相关文章、首页语句的 key 里带 `limit` 或查询条件，
+   取值不可枚举。写操作只对 `inkos:article:list:version` 做一次 `INCR`，
+   全部列表缓存立刻作废；老 key 不删，随各自 TTL 自然消失（O(1) 失效且不阻塞 Redis）；
+3. **什么都不做，交给 TTL** —— 只有计数值变了（点赞、评论数）时。
+   计数变化太频繁，为它作废整个列表缓存不划算，这类字段的 TTL 就是「最多滞后多久」的承诺。
+
+> 版本号 key **刻意不设过期时间**：一旦过期就会从 0 重新开始，
+> 与它同时代的老条目可能被「复活」。它由原生 `INCR` 写入，天然不带 TTL。
+
+**启动预热**：`CacheWarmUpRunner` 挂在 `ApplicationReadyEvent` 上（晚于所有
+`ApplicationRunner`，因此种子数据已提交），把分类树、标签云、首页语句、前两页文章列表
+以及这些文章的详情写进 Redis。它调用的是**正常业务读方法**，所以预热写入的 key
+与真实读取时不可能对不上 —— 预热另写一套 key 是只在「第一次访问」才暴露的隐蔽 bug。
+预热失败只打日志，不影响启动；`inkos.cache.warm-up.enabled=false` 可关闭。
+
+**故障降级**：Redis 挂了不该变成接口 5xx，也不该让每个请求都先等满 3 秒连接超时。
+`RedisCacheService` 用 30 秒熔断窗口做到这一点 —— 首次失败打一条 WARN，
+之后 30 秒内直接判定「不可用」，不再真的去连。**只在「从可用转入不可用」时打日志**，
+否则故障期间每个请求一行日志会把真正的线索刷掉。
+
+**TTL 抖动**：同一批预热写入的 key 若 TTL 完全相同，就会在同一秒集体过期、
+同一秒集体回源。`±10%` 抖动把它们打散（实测 `category:tree` 1793s、
+`tag:cloud` 1854s、`quote:list` 1933s，标称值都是 1800s）。
+
+**归一化**：`put` 在落盘前把 `List` / `Set` / `Map` 复制成可变实现。
+`Stream.toList()`、`Collections.emptyList()` 的实现类是 final 且不是 record，
+不写类型信息，作为顶层值**读不回来**（见上表）。业务侧每次手写 `new ArrayList<>()`
+太容易漏，因此在缓存层统一兜住。
+
+**阅读计数的去重**：详情走缓存后，若计数器仍是「每个请求 +1」，就变成
+「读压力转移出数据库、写压力原样留在数据库」—— 一次 F5 就是一次 UPDATE。
+前台传访客标识（登录用户 `u:{id}`、游客 `ip:{ip}`），6 小时内同一访客只计一次；
+识别不出访客时 fail-open（每次都计），与引入缓存之前的行为一致。
+
+> 注意：详情缓存里带着 `view_count` / `like_count` / `comment_count`，
+> 缓存期间不会刷新 —— **5 分钟 TTL 就是「计数最多滞后多久」的承诺**。
+> 点赞与文章编辑会在写路径主动删掉详情 key（slug 当时已在手里，不额外查库）；
+> 评论数变化刻意不做主动失效，交给 TTL。
+
+覆盖面由两个测试把守：`CachedValueRoundTripTest`（序列化契约，不连 Redis，必然执行）
+与 `ContentCacheIntegrationTest`（真实 Redis 链路，Redis 不可用时自动 skip 而非失败）。
+
 ### 健康检查的一个坑
 
 `management.endpoint.health.show-details` **不能写 `when-authorized`**：
@@ -548,9 +627,14 @@ java -jar inkos-admin/target/inkos-blog.jar
 
 ### 接入 Redis 分布式会话
 
-1. 三个模块的 POM 加 `spring-boot-starter-data-redis` 与 Sa-Token 的 Redis 集成包
-2. `application-prod.yml` 里的 `spring.data.redis.*` 已就绪
-3. Sa-Token 会自动把会话从内存切到 Redis，代码无需改动
+`spring-boot-starter-data-redis` 与连接配置都已就绪（`inkos-framework` + `application.yml`），
+公开读缓存也已经跑在这套连接上。会话要切到 Redis 只剩一步：
+
+1. 加 Sa-Token 的 Redis 集成包即可 —— Sa-Token 会自动把会话从内存切到 Redis，
+   业务代码无需改动（`LoginUser` 已实现 `Serializable`，就是为这一步准备的）
+
+`CacheConstants.LOGIN_USER_KEY` 是为「会话内登录用户」预留的 key 前缀，**当前未被使用**：
+登录态由 Sa-Token 自己管理，缓存层刻意不碰它。
 
 ---
 
@@ -667,7 +751,7 @@ SELECT CHAR_LENGTH(content) AS chars, LENGTH(content) AS bytes, HEX(content) FRO
 | 技术栈：Java 25 + Spring Boot 4.1.1 | ✅ 已完成 |
 | M1 地基：多模块、Sa-Token、RBAC、统一异常、容器化环境 | ✅ 已完成 |
 | M2 内容：文章 CRUD、分类标签、首页语句、**检索** | 🔶 主体完成（Markdown 渲染与 XSS 净化待接入） |
-| M3 发布流水线：Outbox + MQ + 索引 + 缓存失效 | ⬜ 待开发 |
+| M3 发布流水线：Outbox + MQ + 索引 + 缓存失效 | 🔶 公开读缓存、启动预热与写时失效已完成；Outbox + MQ + 增量索引待开发 |
 | M4 互动：**评论树、点赞收藏**、统计看板 | 🔶 评论与互动已完成，统计看板待开发 |
 | M5 生产化：**可观测性、接口限流**、SEO、备份演练 | 🔶 可观测性与限流已完成，SEO 与备份演练待开发 |
 
@@ -682,10 +766,42 @@ SELECT CHAR_LENGTH(content) AS chars, LENGTH(content) AS bytes, HEX(content) FRO
 | 全文检索 | LIKE `%kw%` 匹配正文，**无法走索引** | MySQL `ngram` 全文索引，或外接 Elasticsearch |
 | 数据库版本管理 | `schema.sql` 全量执行；新增列不会作用于已存在的表 | 生产切 Flyway/Liquibase |
 | 限流 | 单机内存滑动窗口，多实例各限各的 | 换 Redis 计数器（只需替换切面后端，注解不动） |
-| 缓存 | 未接入 | `CacheConstants` 已预留 key 前缀；Redis 或本地 Caffeine |
+| 缓存 | 公开读缓存（字典 / 列表 / 详情）+ 启动预热 + 阅读去重已接入 | 一致性见下一行；需要集群时把 `NoOpCacheService` 之外再多一个本地二级缓存 |
+| 缓存一致性 | 事务提交后失效（精确删除 + 版本号），同键并发回源使用单进程条带锁合并 | 跨实例没有分布式锁；需要强一致性时增加提交事件或分布式协调 |
+| 权限查询 | `SysPermissionServiceImpl` 每次鉴权都查库（Sa-Token 每个 `@SaCheckPermission` 都会回调） | 加 Redis 二级缓存。**前提是先覆盖失效面**：角色-菜单授权、用户-角色变更、角色与用户删除，漏一个就是越权 |
+| 标签重名 | `cms_tag.name` 无唯一约束，并发建标会产生同名标签 | 名称加唯一索引 + 冲突重试 |
+| slug 分配 | `resolveUniqueSlug` 是「先查再插」，存在 TOCTOU 窗口，并发创建会撞唯一键抛 `DuplicateKeyException` | 捕获冲突后重试，与点赞的幂等写法一致 |
+| 评论数 → 详情缓存 | 评论增减不主动失效详情缓存，靠 5 分钟 TTL | 失效需要多查一次文章拿 slug；评论是低频写，暂不为它加查询 |
 | 评论树 | 单篇评论全量查出后内存组树 | 评论量上千后改为按 rootId 分页 + 懒加载 |
 | JSON 字段 | 未使用 | MySQL `JSON` 无 GIN 索引，复杂查询需另建索引表 |
 
 > **升级注意**：本项目升级到 Boot 4 时新增了 `cms_article.favorite_count` 等列。
 > `schema.sql` 使用 `CREATE TABLE IF NOT EXISTS`，**不会修改已存在的表**，
-> 因此升级后需重建开发库（`DROP DATABASE inkos` 后重建，下次启动自动初始化）。
+> 已有库应备份后执行对应的增量迁移，保留数据；本轮的首屏主题字段使用下面的 `hero-copy-upgrade.sql`。
+
+## 砚知前端联调与缓存验收
+
+前端默认端口为 4173，Vite `/api` 代理连接后端 8080。开发 profile 明确允许 `http://localhost:4173` 和 `http://127.0.0.1:4173`；生产来源使用 `CORS_ALLOWED_ORIGINS` 逗号分隔配置，默认不允许跨域，不使用通配来源。响应暴露 `X-Request-Id` 以便前端诊断。配置改动后须重新打包并重启后端，不能用旧进程验收。
+
+Redis 读缓存保留 TTL 抖动及不可用时的数据库降级；同键并发加载使用 256 个条带锁和二次缓存检查减少数据库查询。失效动作在事务成功提交后执行，避免提交前旧值重新进入缓存。该保护是单进程内的，并不声称跨实例强一致。
+
+执行 `mvn test` 时启动 MySQL 与 Redis。真实 Redis 测试覆盖缓存命中、TTL、重复读的数据库回源计数、内容失效及阅读去重；并发与故障单测覆盖合并回源、冷却降级，事务单测验证提交后失效。Redis 离线会跳过集成测试，应核对 Surefire 的 skipped 数，不将跳过算作通过。前端的真实浏览器登录测试见相邻 `inkos-web/scripts/verify-redesign.cjs`，覆盖两个来源及登录、刷新、登出。
+
+
+## 内容工作台升级
+
+文章后台增加回收/恢复（状态 4 → 草稿）、标签增删改查、详情 tagIds 和列表 visibility。普通作者只可访问与修改本人文章；公开列表、详情和相关文章仅返回公开且已发布内容。编辑已发布文章即时生效，写后缓存失效在事务提交后执行。
+
+已有环境串行执行 `inkos-admin/src/main/resources/db/workspace-upgrade.sql` 后重新登录，补齐标签与恢复权限。脚本幂等，不自动扩大无内容管理权限角色的权限。新开发数据库在种子初始化时配置完整权限。
+
+默认首页语句由独立初始化器处理，配置 `inkos.content.default-quotes.enabled`（默认 true）。仅在整个语句表为空时初始化，保留已有或已删除内容；MySQL 命名锁和事务保护并发启动。Redis 不可用时按需回源，各预热模块独立记录结果。
+
+`mvn test` 包含 WorkspaceIntegrationTest：文章生命周期、归属和可见性、分类循环、标签引用及改名失效、语句停用、并发空库初始化与历史删除保留。测试使用 inkos_test、Redis DB 15，可通过 INKOS_TEST_REDIS_DB 更改；并发初始化测试需要测试 MySQL 账号创建/删除临时数据库权限。
+
+## 首屏主题字段升级
+
+`cms_quote` 新增可空 `headline VARCHAR(80)` 和 `description VARCHAR(240)`。公开 `GET /api/v1/public/quotes` 和后台语句列表返回这两个字段，后台新建/更新接收相同字段；成组填写或同时清空，不完整时返回 400。旧客户端都不传时保留原主题，显式传两个空字符串可清除主题。
+
+生产部署前串行执行 `inkos-admin/src/main/resources/db/hero-copy-upgrade.sql`；dev/test 启动自动执行。脚本按列存在性判断，给五条未修改的默认语句补齐主题，保留其他内容、显式清空和历史删除记录。全新库由独立默认语句初始化器写入五组主题，仍受默认语句开关控制，不依赖开发账号。
+
+语句缓存键加入 `hero-v3` 结构版本，避免旧 JSON 缺少字段；写后仍在事务提交后递增列表版本。公开列表只返回启用且未删除的语句。`WorkspaceIntegrationTest` 额外验证主题成组校验、长度、兼容旧客户端、清空、写后读取及旧表迁移重复执行与保留编辑。

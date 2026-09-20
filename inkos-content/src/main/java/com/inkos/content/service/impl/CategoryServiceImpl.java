@@ -2,12 +2,16 @@ package com.inkos.content.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.inkos.common.core.constant.CacheConstants;
 import com.inkos.common.core.enums.ResultCode;
 import com.inkos.common.exception.BusinessException;
 import com.inkos.common.util.StrUtils;
 import com.inkos.common.util.TreeUtils;
+import com.inkos.content.cache.ContentCache;
 import com.inkos.content.dto.CategoryForm;
 import com.inkos.content.entity.Category;
+import com.inkos.content.entity.Article;
+import com.inkos.content.mapper.ArticleMapper;
 import com.inkos.content.mapper.CategoryMapper;
 import com.inkos.content.service.CategoryService;
 import com.inkos.content.vo.CategoryVO;
@@ -30,8 +34,23 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
     /** 启用状态 */
     private static final int STATUS_ENABLED = 1;
 
+    /** 内容域缓存策略 */
+    private final ContentCache contentCache;
+    private final ArticleMapper articleMapper;
+
+    /**
+     * 分类树。
+     *
+     * <p>分类是典型的「读极多、写极少」字典数据，每次请求都全表扫描 + 内存建树毫无必要。
+     * 缓存整体只有一棵树，写操作直接删掉这一个 key。
+     */
     @Override
     public List<CategoryVO> tree() {
+        return contentCache.getOrLoad(CacheConstants.CATEGORY_TREE_KEY, CacheConstants.DICTIONARY_TTL,
+                this::buildTree);
+    }
+
+    private List<CategoryVO> buildTree() {
         List<Category> categories = list(new LambdaQueryWrapper<Category>()
                 .orderByAsc(Category::getSortOrder)
                 .orderByAsc(Category::getId));
@@ -57,6 +76,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long create(CategoryForm form) {
         Long parentId = resolveParentId(form.parentId(), null);
 
@@ -69,6 +89,10 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         category.setStatus(form.status() == null ? STATUS_ENABLED : form.status());
         category.setArticleCount(0);
         save(category);
+        contentCache.evictCategoryTree();
+        contentCache.invalidateArticleLists();
+        for (Article article : articleMapper.selectList(new LambdaQueryWrapper<Article>()))
+            contentCache.evictArticleDetail(article.getSlug());
         return category.getId();
     }
 
@@ -86,6 +110,10 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         update.setSortOrder(form.sortOrder() == null ? existing.getSortOrder() : form.sortOrder());
         update.setStatus(form.status() == null ? existing.getStatus() : form.status());
         updateById(update);
+        contentCache.evictCategoryTree();
+        contentCache.invalidateArticleLists();
+        for (Article article : articleMapper.selectList(new LambdaQueryWrapper<Article>()))
+            contentCache.evictArticleDetail(article.getSlug());
     }
 
     @Override
@@ -99,7 +127,13 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         if (hasChildren) {
             throw BusinessException.of(ResultCode.CONFLICT, "该分类下存在子分类，请先删除子分类");
         }
+        if (articleMapper.selectCount(new LambdaQueryWrapper<Article>().eq(Article::getCategoryId, id)) > 0)
+            throw BusinessException.of(ResultCode.CONFLICT, "分类仍被文章引用，请先调整文章分类");
         removeById(id);
+        contentCache.evictCategoryTree();
+        contentCache.invalidateArticleLists();
+        for (Article article : articleMapper.selectList(new LambdaQueryWrapper<Article>()))
+            contentCache.evictArticleDetail(article.getSlug());
     }
 
     // ==================== 内部工具 ====================
@@ -130,6 +164,14 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         }
         if (!ROOT_PARENT_ID.equals(parentId) && getById(parentId) == null) {
             throw BusinessException.of(ResultCode.NOT_FOUND, "父分类不存在：" + parentId);
+        }
+        java.util.Set<Long> visited = new java.util.HashSet<>();
+        Long cursor = parentId;
+        while (cursor != null && !ROOT_PARENT_ID.equals(cursor)) {
+            if (cursor.equals(selfId) || !visited.add(cursor))
+                throw BusinessException.of(ResultCode.CONFLICT, "分类不能形成循环层级");
+            Category parent = getById(cursor);
+            cursor = parent == null ? null : parent.getParentId();
         }
         return parentId;
     }

@@ -25,6 +25,7 @@ import java.util.List;
 public record ArticleForm(
 
         @NotNull(message = "文章 id 不能为空", groups = ValidGroup.Update.class)
+        @jakarta.validation.constraints.Null(groups = ValidGroup.Create.class)
         Long id,
 
         Long categoryId,
@@ -47,6 +48,7 @@ public record ArticleForm(
 
         List<Long> tagIds,
 
+        @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(1)
         Integer visibility
 ) {
 }

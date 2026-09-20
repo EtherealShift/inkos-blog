@@ -8,8 +8,12 @@
 #   dev 负责建表与种子数据，本文件只把库名换成 inkos_test。
 # ============================================================================
 spring:
+  data:
+    redis:
+      database: ${INKOS_TEST_REDIS_DB:15}
   datasource:
     url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:inkos_test}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
   sql:
     init:
       mode: always
+      schema-locations: classpath:db/schema.sql,classpath:db/hero-copy-upgrade.sql
